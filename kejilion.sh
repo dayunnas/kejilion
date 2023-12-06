@@ -1,5 +1,32 @@
 #!/bin/bash
 
+install_wget() {
+    if ! command -v wget &>/dev/null; then
+        if command -v apt &>/dev/null; then
+            apt update -y && apt install -y wget
+        elif command -v yum &>/dev/null; then
+            yum -y update && yum -y install wget
+        else
+            echo "未知的包管理器!"
+            break
+        fi
+    fi
+}
+
+install_sshpass() {
+    if ! command -v sshpass &>/dev/null; then
+        if command -v apt &>/dev/null; then
+            apt update -y && apt install -y sshpass
+        elif command -v yum &>/dev/null; then
+            yum -y update && yum -y install sshpass
+        else
+            echo "未知的包管理器!"
+            break
+        fi
+    fi
+}
+
+
 # 定义安装 Docker 的函数
 install_docker() {
     if ! command -v docker &>/dev/null; then
@@ -11,6 +38,12 @@ install_docker() {
     fi
 }
 
+iptables_open() {
+    iptables -P INPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+    iptables -F
+}
 
 install_ldnmp() {
       cd /home/web && docker-compose up -d
@@ -95,6 +128,90 @@ install_ldnmp() {
       echo ""
 }
 
+install_certbot() {
+    if ! command -v certbot &>/dev/null; then
+        if command -v apt &>/dev/null; then
+            apt update -y && apt install -y certbot
+        elif command -v yum &>/dev/null; then
+            yum -y update && yum -y install certbot
+        else
+            echo "未知的包管理器!"
+            break
+        fi
+    fi
+
+    # 切换到一个一致的目录（例如，家目录）
+    cd ~ || exit
+
+    # 下载并使脚本可执行
+    curl -O https://raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh
+    chmod +x auto_cert_renewal.sh
+
+    # 安排每日午夜运行脚本
+    echo "0 0 * * * cd ~ && ./auto_cert_renewal.sh" | crontab -
+}
+
+install_ssltls() {
+    #   docker stop nginx
+    #   iptables_open
+    #   cd ~
+    #   curl https://get.acme.sh | sh
+    #   ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
+    #   docker start nginx
+
+      docker stop nginx
+      iptables_open
+      cd ~
+      certbot certonly --standalone -d $yuming --email your@email.com --agree-tos --no-eff-email --force-renewal
+      cp /etc/letsencrypt/live/$yuming/cert.pem /home/web/certs/${yuming}_cert.pem
+      cp /etc/letsencrypt/live/$yuming/privkey.pem /home/web/certs/${yuming}_key.pem
+      docker start nginx
+
+}
+
+
+nginx_status() {
+
+    nginx_container_name="nginx"
+
+    # 获取容器的状态
+    container_status=$(docker inspect -f '{{.State.Status}}' "$nginx_container_name" 2>/dev/null)
+
+    # 获取容器的重启状态
+    container_restart_count=$(docker inspect -f '{{.RestartCount}}' "$nginx_container_name" 2>/dev/null)
+
+    # 检查容器是否在运行，并且没有处于"Restarting"状态
+    if [ "$container_status" == "running" ]; then
+        echo ""
+    else
+        rm -r /home/web/html/$yuming >/dev/null 2>&1
+        rm /home/web/conf.d/$yuming.conf >/dev/null 2>&1
+        rm /home/web/certs/${yuming}_key.pem >/dev/null 2>&1
+        rm /home/web/certs/${yuming}_cert.pem >/dev/null 2>&1
+        docker restart nginx >/dev/null 2>&1
+        echo -e "\e[1;31m检测到域名证书申请失败，请检测域名是否正确解析或更换域名重新尝试！\e[0m"
+    fi
+
+}
+
+
+install_lrzsz() {
+    if ! command -v lrzsz &>/dev/null; then
+        if command -v apt &>/dev/null; then
+            apt update -y && apt install -y lrzsz
+        elif command -v yum &>/dev/null; then
+            yum -y update && yum -y install lrzsz
+        else
+            echo "未知的包管理器!"
+            break
+        fi
+    fi
+
+}
+
+
+
+
 
 while true; do
 clear
@@ -103,7 +220,7 @@ echo -e "\033[96m_  _ ____  _ _ _    _ ____ _  _ "
 echo "|_/  |___  | | |    | |  | |\ | "
 echo "| \_ |___ _| | |___ | |__| | \| "
 echo "                                "
-echo -e "\033[96m科技lion一键脚本工具 v2.0 （支持Ubuntu，Debian，Centos系统）\033[0m"
+echo -e "\033[96m科技lion一键脚本工具 v2.0.4 （支持Ubuntu/Debian/CentOS系统）\033[0m"
 echo "------------------------"
 echo "1. 系统信息查询"
 echo "2. 系统更新"
@@ -461,17 +578,7 @@ case $choice in
 
   5)
     clear
-    # 检查并安装 wget（如果需要）
-    if ! command -v wget &>/dev/null; then
-        if command -v apt &>/dev/null; then
-            apt update -y && apt install -y wget
-        elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install wget
-        else
-            echo "未知的包管理器!"
-            exit 1
-        fi
-    fi
+    install_wget
     wget --no-check-certificate -O tcpx.sh https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh
     chmod +x tcpx.sh
     ./tcpx.sh
@@ -861,18 +968,7 @@ case $choice in
 
   7)
     clear
-    # 检查并安装 wget（如果需要）
-    if ! command -v wget &>/dev/null; then
-        if command -v apt &>/dev/null; then
-            apt update -y && apt install -y wget
-        elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install wget
-        else
-            echo "未知的包管理器!"
-            exit 1
-        fi
-    fi
-
+    install_wget
     wget -N https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh && bash menu.sh [option] [lisence/url/token]
     ;;
 
@@ -908,10 +1004,12 @@ case $choice in
               ;;
           3)
               clear
+              install_wget
               wget -qO- https://github.com/yeahwu/check/raw/main/check.sh | bash
               ;;
           4)
               clear
+              install_wget
               wget -qO- git.io/besttrace | bash
               ;;
           5)
@@ -1028,13 +1126,7 @@ case $choice in
               done
 
               read -p "请输入你重装后的密码: " vpspasswd
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y wget
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install wget
-              else
-                  echo "未知的包管理器!"
-              fi
+              install_wget
               bash <(wget --no-check-certificate -qO- 'https://raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh') $xitong -v 64 -p $vpspasswd -port 22
               ;;
             [Nn])
@@ -1108,9 +1200,10 @@ case $choice in
     echo  "10. 安装Halo博客网站"
     echo  "11. 安装typecho轻量博客网站"
     echo  "------------------------"
-    echo -e "21. 仅安装nginx  \033[33mNEW\033[0m"
+    echo -e "21. 仅安装nginx \033[33mNEW\033[0m"
     echo  "22. 站点重定向"
     echo  "23. 站点反向代理"
+    echo -e "24. 自定义静态站点 \033[36mBeta\033[0m"
     echo  "------------------------"
     echo  "31. 站点数据管理"
     echo  "32. 备份全站数据"
@@ -1149,6 +1242,7 @@ case $choice in
       fi
 
       install_docker
+      install_certbot
 
       # 创建必要的目录和文件
       cd /home && mkdir -p web/html web/mysql web/certs web/conf.d web/redis web/log/nginx && touch web/docker-compose.yml
@@ -1174,17 +1268,13 @@ case $choice in
       2)
       clear
       # wordpress
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/wordpress.com.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
@@ -1221,22 +1311,18 @@ case $choice in
       echo "密码: $dbusepasswd"
       echo "数据库主机: mysql"
       echo "表前缀: wp_"
-
+      nginx_status
         ;;
+
       3)
       clear
       # Discuz论坛
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
-
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/discuz.com.conf
 
@@ -1273,27 +1359,21 @@ case $choice in
       echo "用户名: $dbuse"
       echo "密码: $dbusepasswd"
       echo "表前缀: discuz_"
-
+      nginx_status
 
         ;;
 
       4)
       clear
       # 可道云桌面
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
-
+      install_ssltls
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/kdy.com.conf
-
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
       cd /home/web/html
@@ -1327,22 +1407,19 @@ case $choice in
       echo "密码: $dbusepasswd"
       echo "数据库名: $dbname"
       echo "redis主机: redis"
+      nginx_status
         ;;
 
       5)
       clear
       # 苹果CMS
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/maccms.com.conf
 
@@ -1385,23 +1462,19 @@ case $choice in
       echo "------------------------"
       echo "安装成功后登录后台地址"
       echo "https://$yuming/vip.php"
-      echo ""
+      nginx_status
         ;;
 
       6)
       clear
       # 独脚数卡
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/dujiaoka.com.conf
 
@@ -1450,21 +1523,17 @@ case $choice in
       echo "登录时右上角如果出现红色error0请使用如下命令: "
       echo "我也很气愤独角数卡为啥这么麻烦，会有这样的问题！"
       echo "sed -i 's/ADMIN_HTTPS=false/ADMIN_HTTPS=true/g' /home/web/html/$yuming/dujiaoka/.env"
-      echo ""
+      nginx_status
         ;;
 
       7)
       clear
       # BingChat
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       docker run -d -p 3099:8080 --name go-proxy-bingai --restart=unless-stopped adams549659584/go-proxy-bingai
 
@@ -1481,23 +1550,19 @@ case $choice in
       clear
       echo "您的BingChat网站搭建好了！"
       echo "https://$yuming"
-      echo ""
+      nginx_status
         ;;
 
       8)
       clear
       # flarum论坛
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/flarum.com.conf
 
@@ -1541,21 +1606,17 @@ case $choice in
       echo "密码: $dbusepasswd"
       echo "表前缀: flarum_"
       echo "管理员信息自行设置"
-      echo ""
+      nginx_status
         ;;
 
       9)
       clear
       # Bitwarden
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       docker run -d \
         --name bitwarden \
@@ -1577,7 +1638,7 @@ case $choice in
       clear
       echo "您的Bitwarden网站搭建好了！"
       echo "https://$yuming"
-      echo ""
+      nginx_status
         ;;
 
       10)
@@ -1585,13 +1646,7 @@ case $choice in
       # Bitwarden
       read -p "请输入你解析的域名: " yuming
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       docker run -d --name halo --restart always --network web_default -p 8010:8090 -v /home/web/html/$yuming/.halo2:/root/.halo2 halohub/halo:2.9
 
@@ -1608,23 +1663,19 @@ case $choice in
       clear
       echo "您的Halo网站搭建好了！"
       echo "https://$yuming"
-      echo ""
+      nginx_status
         ;;
 
       11)
       clear
       # typecho
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你解析的域名: " yuming
       dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
       dbname="${dbname}"
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-
-      docker start nginx
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/typecho.com.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
@@ -1660,23 +1711,30 @@ case $choice in
       echo "用户名: $dbuse"
       echo "密码: $dbusepasswd"
       echo "数据库名: $dbname"
-
+      nginx_status
         ;;
 
 
       21)
       clear
-
       if command -v apt &>/dev/null; then
           apt update -y
           apt install -y curl wget sudo socat unzip tar htop
       elif command -v yum &>/dev/null; then
-          yum -y update && yum -y install curl wget sudo socat unzip tar htop
+          yum -y update
+          yum -y install curl
+          yum -y install wget
+          yum -y install sudo
+          yum -y install socat
+          yum -y install unzip
+          yum -y install tar
+          yum -y install htop
       else
           echo "未知的包管理器!"
       fi
 
       install_docker
+      install_certbot
 
       cd /home && mkdir -p web/html web/mysql web/certs web/conf.d web/redis web/log/nginx && touch web/docker-compose.yml
 
@@ -1685,58 +1743,92 @@ case $choice in
       localhostIP=$(curl -s ipv4.ip.sb)
       sed -i "s/localhost/$localhostIP/g" /home/web/conf.d/default.conf
 
+      docker rm -f nginx >/dev/null 2>&1
+      docker rmi nginx >/dev/null 2>&1
       docker run -d --name nginx --restart always -p 80:80 -p 443:443 -v /home/web/nginx.conf:/etc/nginx/nginx.conf -v /home/web/conf.d:/etc/nginx/conf.d -v /home/web/certs:/etc/nginx/certs -v /home/web/html:/var/www/html -v /home/web/log/nginx:/var/log/nginx nginx
 
+      clear
+      nginx_version=$(docker exec nginx nginx -v 2>&1)
+      nginx_version=$(echo "$nginx_version" | grep -oP "nginx/\K[0-9]+\.[0-9]+\.[0-9]+")
+      echo "nginx已安装完成"
+      echo "当前版本: v$nginx_version"
+      echo ""
         ;;
 
       22)
       clear
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你的域名: " yuming
       read -p "请输入跳转域名: " reverseproxy
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/rewrite.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
       sed -i "s/baidu.com/$reverseproxy/g" /home/web/conf.d/$yuming.conf
 
-      docker start nginx
+      docker restart nginx
 
       clear
       echo "您的重定向网站做好了！"
       echo "https://$yuming"
+      nginx_status
 
         ;;
 
       23)
       clear
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
       read -p "请输入你的域名: " yuming
       read -p "请输入你的反代IP: " reverseproxy
       read -p "请输入你的反代端口: " port
 
-      docker stop nginx
-
-      cd ~
-      curl https://get.acme.sh | sh
-      ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
+      install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
       sed -i "s/0.0.0.0/$reverseproxy/g" /home/web/conf.d/$yuming.conf
       sed -i "s/0000/$port/g" /home/web/conf.d/$yuming.conf
 
-      docker start nginx
+      docker restart nginx
 
       clear
       echo "您的反向代理网站做好了！"
       echo "https://$yuming"
-
+      nginx_status
         ;;
 
+      24)
+      clear
+      # wordpress
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
+      read -p "请输入你解析的域名: " yuming
+      install_ssltls
+
+      wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/html.conf
+      sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
+
+      cd /home/web/html
+      mkdir $yuming
+      cd $yuming
+
+      install_lrzsz
+      clear
+      echo -e "目前只允许上传\033[33mindex.html\033[0m文件，请提前准备好，按任意键继续..."
+      read -n 1 -s -r -p ""
+      rz
+
+      docker exec nginx chmod -R 777 /var/www/html
+      docker restart nginx
+
+      clear
+      echo "您的静态网站搭建好了！"
+      echo "https://$yuming"
+      nginx_status
+        ;;
 
     31)
     while true; do
@@ -1794,13 +1886,7 @@ case $choice in
         case $sub_choice in
             1)
                 read -p "请输入你的域名: " yuming
-
-                docker stop nginx
-
-                cd ~
-                curl https://get.acme.sh | sh
-                ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-                docker start nginx
+                install_ssltls
 
                 ;;
 
@@ -1813,13 +1899,7 @@ case $choice in
 
                 rm /home/web/certs/${oddyuming}_key.pem
                 rm /home/web/certs/${oddyuming}_cert.pem
-
-                docker stop nginx
-
-                cd ~
-                curl https://get.acme.sh | sh
-                ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $newyuming --standalone --key-file /home/web/certs/${newyuming}_key.pem --cert-file /home/web/certs/${newyuming}_cert.pem --force
-                docker start nginx
+                install_ssltls
 
                 ;;
 
@@ -1835,6 +1915,7 @@ case $choice in
                 rm /home/web/conf.d/$yuming.conf
                 rm /home/web/certs/${yuming}_key.pem
                 rm /home/web/certs/${yuming}_cert.pem
+                docker restart nginx
                 ;;
             8)
                 read -p "请输入数据库名: " shujuku
@@ -1917,17 +1998,7 @@ case $choice in
               ;;
       esac
 
-      if ! command -v sshpass &>/dev/null; then
-          if command -v apt &>/dev/null; then
-              apt update -y && apt install -y sshpass
-          elif command -v yum &>/dev/null; then
-              yum -y update && yum -y install sshpass
-          else
-              echo "未知的包管理器!"
-          fi
-      else
-          echo "sshpass 已经安装，跳过安装步骤。"
-      fi
+      install_sshpass
 
       ;;
 
@@ -1952,6 +2023,7 @@ case $choice in
       fi
 
       install_docker
+      install_certbot
       install_ldnmp
 
       ;;
@@ -2195,6 +2267,7 @@ case $choice in
       fi
 
       install_docker
+      install_certbot
       install_ldnmp
 
       ;;
@@ -2324,26 +2397,8 @@ case $choice in
                     read -p "确定安装宝塔吗？(Y/N): " choice
                     case "$choice" in
                         [Yy])
-                            if ! command -v iptables &> /dev/null; then
-                            echo ""
-                            else
-                                # iptables命令
-                                iptables -P INPUT ACCEPT
-                                iptables -P FORWARD ACCEPT
-                                iptables -P OUTPUT ACCEPT
-                                iptables -F
-                            fi
-
-                            if ! command -v wget &>/dev/null; then
-                                if command -v apt &>/dev/null; then
-                                    apt update -y && apt install -y wget
-                                elif command -v yum &>/dev/null; then
-                                    yum -y update && yum -y install wget
-                                else
-                                    echo "未知的包管理器!"
-                                    exit 1
-                                fi
-                            fi
+                            iptables_open
+                            install_wget
                             if [ "$system_type" == "centos" ]; then
                                 yum install -y wget && wget -O install.sh https://download.bt.cn/install/install_6.0.sh && sh install.sh ed8484bec
                             elif [ "$system_type" == "ubuntu" ]; then
@@ -2426,26 +2481,8 @@ case $choice in
                     read -p "确定安装aaPanel吗？(Y/N): " choice
                     case "$choice" in
                         [Yy])
-                            if ! command -v iptables &> /dev/null; then
-                            echo ""
-                            else
-                                # iptables命令
-                                iptables -P INPUT ACCEPT
-                                iptables -P FORWARD ACCEPT
-                                iptables -P OUTPUT ACCEPT
-                                iptables -F
-                            fi
-
-                            if ! command -v wget &>/dev/null; then
-                                if command -v apt &>/dev/null; then
-                                    apt update -y && apt install -y wget
-                                elif command -v yum &>/dev/null; then
-                                    yum -y update && yum -y install wget
-                                else
-                                    echo "未知的包管理器!"
-                                    exit 1
-                                fi
-                            fi
+                            iptables_open
+                            install_wget
                             if [ "$system_type" == "centos" ]; then
                                 yum install -y wget && wget -O install.sh http://www.aapanel.com/script/install_6.0_en.sh && bash install.sh aapanel
                             elif [ "$system_type" == "ubuntu" ]; then
@@ -2495,16 +2532,7 @@ case $choice in
               read -p "确定安装1Panel吗？(Y/N): " choice
               case "$choice" in
                 [Yy])
-                  if ! command -v iptables &> /dev/null; then
-                  echo ""
-                  else
-                      # iptables命令
-                      iptables -P INPUT ACCEPT
-                      iptables -P FORWARD ACCEPT
-                      iptables -P OUTPUT ACCEPT
-                      iptables -F
-                  fi
-
+                  iptables_open
                   if [ "$system_type" == "centos" ]; then
                     curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh && sh quick_start.sh
                   elif [ "$system_type" == "ubuntu" ]; then
@@ -2847,6 +2875,7 @@ case $choice in
                             clear
                             docker rm -f qbittorrent
                             docker rmi -f lscr.io/linuxserver/qbittorrent:latest
+                            docker rmi -f lscr.io/linuxserver/qbittorrent:4.5.5
                             install_docker
                             docker run -d \
                                   --name=qbittorrent \
@@ -2877,6 +2906,7 @@ case $choice in
                             clear
                             docker rm -f qbittorrent
                             docker rmi -f lscr.io/linuxserver/qbittorrent:latest
+                            docker rmi -f lscr.io/linuxserver/qbittorrent:4.5.5
                             rm -rf /home/docker/qbittorrent
                             echo "应用已卸载"
                             ;;
@@ -2912,7 +2942,7 @@ case $choice in
                           -v /home/docker/qbittorrent/config:/config \
                           -v /home/docker/qbittorrent/downloads:/downloads \
                           --restart unless-stopped \
-                          lscr.io/linuxserver/qbittorrent:latest
+                          lscr.io/linuxserver/qbittorrent:4.5.5
                     clear
                     echo "QB已经安装完成"
                     echo "------------------------"
@@ -3096,7 +3126,7 @@ case $choice in
                         1)
                             clear
                             docker rm -f rocketchat
-                            docker rmi -f rocket.chat
+                            docker rmi -f rocket.chat:6.3
                             install_docker
 
                             docker run --name rocketchat --restart=always -p 3897:3000 --link db --env ROOT_URL=http://localhost --env MONGO_OPLOG_URL=mongodb://db:27017/rs5 -d rocket.chat
@@ -3113,8 +3143,10 @@ case $choice in
                             clear
                             docker rm -f rocketchat
                             docker rmi -f rocket.chat
+                            docker rmi -f rocket.chat:6.3
                             docker rm -f db
                             docker rmi -f mongo:latest
+                            # docker rmi -f mongo:6
                             rm -rf /home/docker/mongo
                             echo "应用已卸载"
                             ;;
@@ -3144,7 +3176,7 @@ case $choice in
                     sleep 1
                     docker exec -it db mongosh --eval "printjson(rs.initiate())"
                     sleep 5
-                    docker run --name rocketchat --restart=always -p 3897:3000 --link db --env ROOT_URL=http://localhost --env MONGO_OPLOG_URL=mongodb://db:27017/rs5 -d rocket.chat
+                    docker run --name rocketchat --restart=always -p 3897:3000 --link db --env ROOT_URL=http://localhost --env MONGO_OPLOG_URL=mongodb://db:27017/rs5 -d rocket.chat:6.3
 
                     clear
 
@@ -4156,9 +4188,13 @@ case $choice in
       echo "14. 用户/密码生成器"
       echo "15. 系统时区调整"
       echo "16. 开启BBR3加速"
-      echo -e "17. 防火墙高级管理器 \033[33mNEW\033[0m"
+      echo "17. 防火墙高级管理器"
+      echo "18. 修改主机名"
+      echo -e "19. 切换系统更新源 \033[36mBeta\033[0m"
       echo "------------------------"
       echo "21. 留言板"
+      echo "------------------------"
+      echo "99. 重启服务器"
       echo "------------------------"
       echo "0. 返回主菜单"
       echo "------------------------"
@@ -4285,10 +4321,7 @@ case $choice in
 
           5)
               clear
-              iptables -P INPUT ACCEPT
-              iptables -P FORWARD ACCEPT
-              iptables -P OUTPUT ACCEPT
-              iptables -F
+              iptables_open
 
               apt purge -y iptables-persistent > /dev/null 2>&1
               apt purge -y ufw > /dev/null 2>&1
@@ -4328,10 +4361,7 @@ case $choice in
               echo "SSH 端口已修改为: $new_port"
 
               clear
-              iptables -P INPUT ACCEPT
-              iptables -P FORWARD ACCEPT
-              iptables -P OUTPUT ACCEPT
-              iptables -F
+              iptables_open
 
               apt purge -y iptables-persistent > /dev/null 2>&1
               apt purge -y ufw > /dev/null 2>&1
@@ -4413,13 +4443,7 @@ case $choice in
               done
 
               read -p "请输入你重装后的密码: " vpspasswd
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y wget
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install wget
-              else
-                  echo "未知的包管理器!"
-              fi
+              install_wget
               bash <(wget --no-check-certificate -qO- 'https://raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh') $xitong -v 64 -p $vpspasswd -port 22
               ;;
             [Nn])
@@ -5117,10 +5141,7 @@ EOF
             fi
 
           clear
-          iptables -P INPUT ACCEPT
-          iptables -P FORWARD ACCEPT
-          iptables -P OUTPUT ACCEPT
-          iptables -F
+          iptables_open
 
           apt remove -y iptables-persistent
           apt purge -y iptables-persistent
@@ -5161,21 +5182,262 @@ EOF
         fi
               ;;
 
+          18)
+          clear
+          # 获取当前主机名
+          current_hostname=$(hostname)
+
+          echo "当前主机名: $current_hostname"
+
+          # 询问用户是否要更改主机名
+          read -p "是否要更改主机名？(y/n): " answer
+
+          if [ "$answer" == "y" ]; then
+              # 获取新的主机名
+              read -p "请输入新的主机名: " new_hostname
+
+              # 更改主机名
+              if [ -n "$new_hostname" ]; then
+                  # 根据发行版选择相应的命令
+                  if [ -f /etc/debian_version ]; then
+                      # Debian 或 Ubuntu
+                      hostnamectl set-hostname "$new_hostname"
+                      sed -i "s/$current_hostname/$new_hostname/g" /etc/hostname
+                  elif [ -f /etc/redhat-release ]; then
+                      # CentOS
+                      hostnamectl set-hostname "$new_hostname"
+                      sed -i "s/$current_hostname/$new_hostname/g" /etc/hostname
+                  else
+                      echo "未知的发行版，无法更改主机名。"
+                      exit 1
+                  fi
+
+                  # 重启生效
+                  systemctl restart systemd-hostnamed
+                  echo "主机名已更改为: $new_hostname"
+              else
+                  echo "无效的主机名。未更改主机名。"
+                  exit 1
+              fi
+          else
+              echo "未更改主机名。"
+          fi
+
+              ;;
+
+          19)
+
+          # 获取系统信息
+          source /etc/os-release
+
+          # 定义 Ubuntu 更新源
+          aliyun_ubuntu_source="http://mirrors.aliyun.com/ubuntu/"
+          official_ubuntu_source="http://archive.ubuntu.com/ubuntu/"
+          initial_ubuntu_source=""
+
+          # 定义 Debian 更新源
+          aliyun_debian_source="http://mirrors.aliyun.com/debian/"
+          official_debian_source="http://deb.debian.org/debian/"
+          initial_debian_source=""
+
+          # 定义 CentOS 更新源
+          aliyun_centos_source="http://mirrors.aliyun.com/centos/"
+          official_centos_source="http://mirror.centos.org/centos/"
+          initial_centos_source=""
+
+          # 获取当前更新源并设置初始源
+          case "$ID" in
+              ubuntu)
+                  initial_ubuntu_source=$(grep -E '^deb ' /etc/apt/sources.list | head -n 1 | awk '{print $2}')
+                  ;;
+              debian)
+                  initial_debian_source=$(grep -E '^deb ' /etc/apt/sources.list | head -n 1 | awk '{print $2}')
+                  ;;
+              centos)
+                  initial_centos_source=$(awk -F= '/^baseurl=/ {print $2}' /etc/yum.repos.d/CentOS-Base.repo | head -n 1 | tr -d ' ')
+                  ;;
+              *)
+                  echo "未知系统，无法执行切换源脚本"
+                  exit 1
+                  ;;
+          esac
+
+          # 备份当前源
+          backup_sources() {
+              case "$ID" in
+                  ubuntu)
+                      sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+                      ;;
+                  debian)
+                      sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+                      ;;
+                  centos)
+                      if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
+                          sudo cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+                      else
+                          echo "备份已存在，无需重复备份"
+                      fi
+                      ;;
+                  *)
+                      echo "未知系统，无法执行备份操作"
+                      exit 1
+                      ;;
+              esac
+              echo "已备份当前更新源为 /etc/apt/sources.list.bak 或 /etc/yum.repos.d/CentOS-Base.repo.bak"
+          }
+
+          # 还原初始更新源
+          restore_initial_source() {
+              case "$ID" in
+                  ubuntu)
+                      sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
+                      ;;
+                  debian)
+                      sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
+                      ;;
+                  centos)
+                      sudo cp /etc/yum.repos.d/CentOS-Base.repo.bak /etc/yum.repos.d/CentOS-Base.repo
+                      ;;
+                  *)
+                      echo "未知系统，无法执行还原操作"
+                      exit 1
+                      ;;
+              esac
+              echo "已还原初始更新源"
+          }
+
+          # 函数：切换更新源
+          switch_source() {
+              case "$ID" in
+                  ubuntu)
+                      sudo sed -i 's|'"$initial_ubuntu_source"'|'"$1"'|g' /etc/apt/sources.list
+                      ;;
+                  debian)
+                      sudo sed -i 's|'"$initial_debian_source"'|'"$1"'|g' /etc/apt/sources.list
+                      ;;
+                  centos)
+                      sudo sed -i "s|^baseurl=.*$|baseurl=$1|g" /etc/yum.repos.d/CentOS-Base.repo
+                      ;;
+                  *)
+                      echo "未知系统，无法执行切换操作"
+                      exit 1
+                      ;;
+              esac
+          }
+
+          # 主菜单
+          while true; do
+              clear
+              case "$ID" in
+                  ubuntu)
+                      echo "Ubuntu 更新源切换脚本"
+                      echo "------------------------"
+                      ;;
+                  debian)
+                      echo "Debian 更新源切换脚本"
+                      echo "------------------------"
+                      ;;
+                  centos)
+                      echo "CentOS 更新源切换脚本"
+                      echo "------------------------"
+                      ;;
+                  *)
+                      echo "未知系统，无法执行脚本"
+                      exit 1
+                      ;;
+              esac
+
+              echo "1. 切换到阿里云源"
+              echo "2. 切换到官方源"
+              echo "------------------------"
+              echo "3. 备份当前更新源"
+              echo "4. 还原初始更新源"
+              echo "------------------------"
+              echo "0. 返回上一级"
+              echo "------------------------"
+              read -p "请选择操作: " choice
+
+              case $choice in
+                  1)
+                      backup_sources
+                      case "$ID" in
+                          ubuntu)
+                              switch_source $aliyun_ubuntu_source
+                              ;;
+                          debian)
+                              switch_source $aliyun_debian_source
+                              ;;
+                          centos)
+                              switch_source $aliyun_centos_source
+                              ;;
+                          *)
+                              echo "未知系统，无法执行切换操作"
+                              exit 1
+                              ;;
+                      esac
+                      echo "已切换到阿里云源"
+                      ;;
+                  2)
+                      backup_sources
+                      case "$ID" in
+                          ubuntu)
+                              switch_source $official_ubuntu_source
+                              ;;
+                          debian)
+                              switch_source $official_debian_source
+                              ;;
+                          centos)
+                              switch_source $official_centos_source
+                              ;;
+                          *)
+                              echo "未知系统，无法执行切换操作"
+                              exit 1
+                              ;;
+                      esac
+                      echo "已切换到官方源"
+                      ;;
+                  3)
+                      backup_sources
+                      case "$ID" in
+                          ubuntu)
+                              switch_source $initial_ubuntu_source
+                              ;;
+                          debian)
+                              switch_source $initial_debian_source
+                              ;;
+                          centos)
+                              switch_source $initial_centos_source
+                              ;;
+                          *)
+                              echo "未知系统，无法执行切换操作"
+                              exit 1
+                              ;;
+                      esac
+                      echo "已切换到初始更新源"
+                      ;;
+                  4)
+                      restore_initial_source
+                      ;;
+                  0)
+                      break
+                      ;;
+                  *)
+                      echo "无效的选择，请重新输入"
+                      ;;
+              esac
+              echo -e "\033[0;32m操作完成\033[0m"
+              echo "按任意键继续..."
+              read -n 1 -s -r -p ""
+              echo ""
+              clear
+          done
+
+              ;;
+
 
           21)
           clear
-          # 检查是否已安装 sshpass
-          if ! command -v sshpass &>/dev/null; then
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y sshpass
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install sshpass
-              else
-                  echo "未知的包管理器!"
-              fi
-          else
-              echo "sshpass 已经安装，跳过安装步骤。"
-          fi
+          install_sshpass
 
           remote_ip="66.42.61.110"
           remote_user="liaotian123"
@@ -5211,6 +5473,11 @@ EOF
 
               ;;
 
+          99)
+          clear
+          echo "正在重启服务器，即将断开SSH连接"
+          reboot
+              ;;
           0)
               cd ~
               ./kejilion.sh
@@ -5447,7 +5714,25 @@ EOF
     echo "LDNMP建站中增加仅安装nginx的选项专门服务于站点重定向和站点反向代理"
     echo "精简无用的代码，优化执行效率"
     echo "------------------------"
-
+    echo "2023-11-29   v2.0.1"
+    echo "LDNMP建站改用cerbot申请证书，更稳定更快速。弃用acme"
+    echo "------------------------"
+    echo "2023-11-30   v2.0.2"
+    echo "面板工具修复QB无法登录问题"
+    echo "面板工具修复RocketChat进入后无限加载问题"
+    echo "系统工具中添加修改主机名功能"
+    echo "系统工具中添加服务器重启功能"
+    echo "------------------------"
+    echo "2023-12-04   v2.0.3"
+    echo "LDNMP建站过程中增加了nginx自我检测修复功能"
+    echo "系统工具添加更新源切换功能，请先在测试环境使用"
+    echo "LDNMP建站增加自定义上传静态html界面功能"
+    echo "------------------------"
+    echo "2023-12-05   v2.0.4"
+    echo "LDNMP建站中仅安装nginx功能添加安装成功提示，更优雅直观"
+    echo "LDNMP建站中仅安装nginx功能支持自动更新nginx版本"
+    echo "优化代码细节，定义调用函数，脚本执行更简洁，提升效率"
+    echo "------------------------"
 
     ;;
 
