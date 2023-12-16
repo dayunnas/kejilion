@@ -1,31 +1,19 @@
 #!/bin/bash
 
-install_wget() {
-    if ! command -v wget &>/dev/null; then
+install() {
+    local package=$1
+    if ! command -v $package &>/dev/null; then
         if command -v apt &>/dev/null; then
-            apt update -y && apt install -y wget
+            apt update -y && apt install -y $package
         elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install wget
+            yum -y update && yum -y install $package
         else
             echo "未知的包管理器!"
-            break
+            return 1
         fi
     fi
+    return 0
 }
-
-install_sshpass() {
-    if ! command -v sshpass &>/dev/null; then
-        if command -v apt &>/dev/null; then
-            apt update -y && apt install -y sshpass
-        elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install sshpass
-        else
-            echo "未知的包管理器!"
-            break
-        fi
-    fi
-}
-
 
 # 定义安装 Docker 的函数
 install_docker() {
@@ -75,6 +63,15 @@ install_ldnmp() {
           "docker exec php74 sh -c 'echo \"memory_limit=256M\" > /usr/local/etc/php/conf.d/memory.ini' > /dev/null 2>&1"
           "docker exec php74 sh -c 'echo \"max_execution_time=1200\" > /usr/local/etc/php/conf.d/max_execution_time.ini' > /dev/null 2>&1"
           "docker exec php74 sh -c 'echo \"max_input_time=600\" > /usr/local/etc/php/conf.d/max_input_time.ini' > /dev/null 2>&1"
+
+          "docker exec nginx chmod -R 777 /var/www/html"
+          "docker exec php chmod -R 777 /var/www/html"
+          "docker exec php74 chmod -R 777 /var/www/html"
+        #   "docker restart mysql > /dev/null 2>&1"
+        #   "docker restart redis > /dev/null 2>&1"
+          "docker restart php > /dev/null 2>&1"
+          "docker restart php74 > /dev/null 2>&1"
+          "docker restart nginx > /dev/null 2>&1"
 
       )
 
@@ -126,19 +123,12 @@ install_ldnmp() {
 
       echo "------------------------"
       echo ""
+
+
 }
 
 install_certbot() {
-    if ! command -v certbot &>/dev/null; then
-        if command -v apt &>/dev/null; then
-            apt update -y && apt install -y certbot
-        elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install certbot
-        else
-            echo "未知的包管理器!"
-            break
-        fi
-    fi
+    install certbot
 
     # 切换到一个一致的目录（例如，家目录）
     cd ~ || exit
@@ -195,23 +185,6 @@ nginx_status() {
 }
 
 
-install_lrzsz() {
-    if ! command -v lrzsz &>/dev/null; then
-        if command -v apt &>/dev/null; then
-            apt update -y && apt install -y lrzsz
-        elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install lrzsz
-        else
-            echo "未知的包管理器!"
-            break
-        fi
-    fi
-
-}
-
-
-
-
 
 while true; do
 clear
@@ -220,7 +193,7 @@ echo -e "\033[96m_  _ ____  _ _ _    _ ____ _  _ "
 echo "|_/  |___  | | |    | |  | |\ | "
 echo "| \_ |___ _| | |___ | |__| | \| "
 echo "                                "
-echo -e "\033[96m科技lion一键脚本工具 v2.0.4 （支持Ubuntu/Debian/CentOS系统）\033[0m"
+echo -e "\033[96m科技lion一键脚本工具 v2.0.8 （支持Ubuntu/Debian/CentOS系统）\033[0m"
 echo "------------------------"
 echo "1. 系统信息查询"
 echo "2. 系统更新"
@@ -232,11 +205,11 @@ echo "7. WARP管理 ▶ 解锁ChatGPT Netflix"
 echo "8. 测试脚本合集 ▶ "
 echo "9. 甲骨文云脚本合集 ▶ "
 echo -e "\033[33m10. LDNMP建站 ▶ \033[0m"
-echo "11. 常用面板工具 ▶ "
+echo "11. 面板工具 ▶ "
 echo "12. 我的工作区 ▶ "
 echo "13. 系统工具 ▶ "
 echo "------------------------"
-echo "00. 脚本更新日志"
+echo "00. 脚本更新"
 echo "------------------------"
 echo "0. 退出脚本"
 echo "------------------------"
@@ -419,11 +392,17 @@ case $choice in
       echo "4. socat 通信连接工具 （申请域名证书必备）"
       echo "5. htop 系统监控工具"
       echo "6. iftop 网络流量监控工具"
-      echo "7. unzip ZIP压缩解压工具z"
+      echo "7. unzip ZIP压缩解压工具"
       echo "8. tar GZ压缩解压工具"
       echo "9. tmux 多路后台运行工具"
       echo "10. ffmpeg 视频编码直播推流工具"
+      echo -e "11. btop 现代化监控工具 \033[33mNEW\033[0m" 
+      echo -e "12. ranger 文件管理工具 \033[33mNEW\033[0m"      
+      echo -e "13. gdu 磁盘占用查看工具 \033[33mNEW\033[0m"
+      echo -e "14. fzf 全局搜索工具 \033[33mNEW\033[0m"                   
       echo "------------------------"
+      echo -e "21. cmatrix 黑客帝国屏保 \033[33mNEW\033[0m"
+      echo "------------------------"     
       echo "31. 全部安装"
       echo "32. 全部卸载"
       echo "------------------------"
@@ -434,113 +413,110 @@ case $choice in
       case $sub_choice in
           1)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y curl
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install curl
-              else
-                  echo "未知的包管理器!"
-              fi
-
+              install curl
+              clear
+              echo "工具已安装，使用方法如下："              
+              curl --help
               ;;
           2)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y wget
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install wget
-              else
-                  echo "未知的包管理器!"
-              fi
+              install wget
+              clear
+              echo "工具已安装，使用方法如下："              
+              wget --help
               ;;
             3)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y sudo
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install sudo
-              else
-                  echo "未知的包管理器!"
-              fi
+              install sudo
+              clear
+              echo "工具已安装，使用方法如下："                
+              sudo --help
               ;;
             4)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y socat
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install socat
-              else
-                  echo "未知的包管理器!"
-              fi
+              install socat
+              clear
+              echo "工具已安装，使用方法如下："
+              socat -h
               ;;
             5)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y htop
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install htop
-              else
-                  echo "未知的包管理器!"
-              fi
+              install htop
+              htop
               ;;
             6)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y iftop
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install iftop
-              else
-                  echo "未知的包管理器!"
-              fi
+              install iftop
+              iftop
               ;;
             7)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y unzip
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install unzip
-              else
-                  echo "未知的包管理器!"
-              fi
+              install unzip
+              clear
+              echo "工具已安装，使用方法如下："
+              unzip
               ;;
             8)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y tar
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install tar
-              else
-                  echo "未知的包管理器!"
-              fi
+              install tar
+              clear
+              echo "工具已安装，使用方法如下："              
+              tar --help
               ;;
             9)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y tmux
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install tmux
-              else
-                  echo "未知的包管理器!"
-              fi
+              install tmux
+              clear
+              echo "工具已安装，使用方法如下："     
+              tmux --help                       
               ;;
             10)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y ffmpeg
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install ffmpeg
-              else
-                  echo "未知的包管理器!"
-              fi
+              install ffmpeg
+              clear
+              echo "工具已安装，使用方法如下："     
+              ffmpeg --help                       
               ;;
 
+            11)
+              clear
+              install btop
+              btop
+              ;;
+            12)
+              clear
+              install ranger
+              cd /
+              ranger
+              cd ~
+              ;;              
+            13)
+              clear
+              install gdu
+              cd /
+              gdu
+              cd ~
+              ;;
+            14)
+              clear
+              install fzf
+              cd /
+              fzf
+              cd ~
+              ;;
+
+            21)
+              clear
+              install cmatrix
+              cmatrix
+              ;;                            
 
           31)
               clear
               if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y curl wget sudo socat htop iftop unzip tar tmux ffmpeg
+                  apt update -y && apt install -y curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger gdu fzf cmatrix
               elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install curl wget sudo socat htop iftop unzip tar tmux ffmpeg
+                  yum -y update && yum -y install curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger gdu fzf cmatrix
               else
                   echo "未知的包管理器!"
               fi
@@ -549,9 +525,9 @@ case $choice in
           32)
               clear
               if command -v apt &>/dev/null; then
-                  apt remove -y htop iftop unzip tmux ffmpeg
+                  apt purge -y htop iftop unzip tmux ffmpeg btop ranger gdu fzf cmatrix
               elif command -v yum &>/dev/null; then
-                  yum -y remove htop iftop unzip tmux ffmpeg
+                  yum -y remove htop iftop unzip tmux ffmpeg btop ranger gdu fzf cmatrix
               else
                   echo "未知的包管理器!"
               fi
@@ -578,7 +554,7 @@ case $choice in
 
   5)
     clear
-    install_wget
+    install wget
     wget --no-check-certificate -O tcpx.sh https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh
     chmod +x tcpx.sh
     ./tcpx.sh
@@ -968,7 +944,7 @@ case $choice in
 
   7)
     clear
-    install_wget
+    install wget
     wget -N https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh && bash menu.sh [option] [lisence/url/token]
     ;;
 
@@ -1004,12 +980,12 @@ case $choice in
               ;;
           3)
               clear
-              install_wget
+              install wget
               wget -qO- https://github.com/yeahwu/check/raw/main/check.sh | bash
               ;;
           4)
               clear
-              install_wget
+              install wget
               wget -qO- git.io/besttrace | bash
               ;;
           5)
@@ -1126,7 +1102,7 @@ case $choice in
               done
 
               read -p "请输入你重装后的密码: " vpspasswd
-              install_wget
+              install wget
               bash <(wget --no-check-certificate -qO- 'https://raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh') $xitong -v 64 -p $vpspasswd -port 22
               ;;
             [Nn])
@@ -1815,7 +1791,7 @@ case $choice in
       mkdir $yuming
       cd $yuming
 
-      install_lrzsz
+      install lrzsz
       clear
       echo -e "目前只允许上传\033[33mindex.html\033[0m文件，请提前准备好，按任意键继续..."
       read -n 1 -s -r -p ""
@@ -1876,7 +1852,8 @@ case $choice in
         echo ""
         echo "操作"
         echo "------------------------"
-        echo "1. 申请/更新域名证书               2. 更换站点域名               3. 清理站点缓存"
+        echo "1. 申请/更新域名证书               2. 更换站点域名"
+        echo -e "3. 清理站点缓存                    4. 查看站点分析报告 \033[33mNEW\033[0m"
         echo "------------------------"
         echo "7. 删除指定站点                    8. 删除指定数据库"
         echo "------------------------"
@@ -1892,10 +1869,10 @@ case $choice in
 
             2)
                 read -p "请输入旧域名: " oddyuming
-                read -p "请输入新域名: " newyuming
-                mv /home/web/conf.d/$oddyuming.conf /home/web/conf.d/$newyuming.conf
-                sed -i "s/$oddyuming/$newyuming/g" /home/web/conf.d/$newyuming.conf
-                mv /home/web/html/$oddyuming /home/web/html/$newyuming
+                read -p "请输入新域名: " yuming
+                mv /home/web/conf.d/$oddyuming.conf /home/web/conf.d/$yuming.conf
+                sed -i "s/$oddyuming/$yuming/g" /home/web/conf.d/$yuming.conf
+                mv /home/web/html/$oddyuming /home/web/html/$yuming
 
                 rm /home/web/certs/${oddyuming}_key.pem
                 rm /home/web/certs/${oddyuming}_cert.pem
@@ -1907,6 +1884,11 @@ case $choice in
             3)
                 docker exec -it nginx rm -rf /var/cache/nginx
                 docker restart nginx
+                ;;
+            4)
+                install goaccess
+                goaccess --log-format=COMBINED /home/web/log/nginx/access.log
+
                 ;;
 
             7)
@@ -1998,7 +1980,7 @@ case $choice in
               ;;
       esac
 
-      install_sshpass
+      install sshpass
 
       ;;
 
@@ -2269,7 +2251,6 @@ case $choice in
       install_docker
       install_certbot
       install_ldnmp
-
       ;;
 
 
@@ -2314,7 +2295,7 @@ case $choice in
     while true; do
 
       echo " ▼ "
-      echo "常用面板工具"
+      echo "面板工具"
       echo "------------------------"
       echo "1. 宝塔面板官方版                       2. aaPanel宝塔国际版"
       echo "3. 1Panel新一代管理面板                 4. NginxProxyManager可视化面板"
@@ -2325,7 +2306,8 @@ case $choice in
       echo "13. Cloudreve网盘系统                   14. 简单图床图片管理程序"
       echo "15. emby多媒体管理系统                  16. Speedtest测速服务面板"
       echo "17. AdGuardHome去广告软件               18. onlyoffice在线办公OFFICE"
-      echo "19. 雷池WAF防火墙面板"
+      echo "19. 雷池WAF防火墙面板                   20. portainer容器管理面板"
+      echo "21. VScode网页版"
       echo "------------------------"
       echo "0. 返回主菜单"
       echo "------------------------"
@@ -2398,7 +2380,7 @@ case $choice in
                     case "$choice" in
                         [Yy])
                             iptables_open
-                            install_wget
+                            install wget
                             if [ "$system_type" == "centos" ]; then
                                 yum install -y wget && wget -O install.sh https://download.bt.cn/install/install_6.0.sh && sh install.sh ed8484bec
                             elif [ "$system_type" == "ubuntu" ]; then
@@ -2482,7 +2464,7 @@ case $choice in
                     case "$choice" in
                         [Yy])
                             iptables_open
-                            install_wget
+                            install wget
                             if [ "$system_type" == "centos" ]; then
                                 yum install -y wget && wget -O install.sh http://www.aapanel.com/script/install_6.0_en.sh && bash install.sh aapanel
                             elif [ "$system_type" == "ubuntu" ]; then
@@ -4011,6 +3993,187 @@ case $choice in
 
               ;;
 
+          20)
+            if docker inspect portainer &>/dev/null; then
+
+                    clear
+                    echo "portainer已安装，访问地址: "
+                    external_ip=$(curl -s ipv4.ip.sb)
+                    echo "http:$external_ip:9050"
+                    echo ""
+
+                    echo "应用操作"
+                    echo "------------------------"
+                    echo "1. 更新应用             2. 卸载应用"
+                    echo "------------------------"
+                    echo "0. 返回上一级选单"
+                    echo "------------------------"
+                    read -p "请输入你的选择: " sub_choice
+
+                    case $sub_choice in
+                        1)
+                            clear
+                            docker rm -f portainer
+                            docker rmi -f portainer/portainer
+                            install_docker
+
+                            docker run -d \
+                            --name portainer \
+                            -p 9050:9000 \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            -v /home/docker/portainer:/data \
+                            --restart always \
+                            portainer/portainer
+
+
+                            clear
+                            echo "portainer已经安装完成"
+                            echo "------------------------"
+                            echo "您可以使用以下地址访问:"
+                            external_ip=$(curl -s ipv4.ip.sb)
+                            echo "http:$external_ip:9050"
+                            echo ""
+                            ;;
+                        2)
+                            clear
+                            docker rm -f portainer
+                            docker rmi -f portainer/portainer
+                            rm -rf /home/docker/portainer
+                            echo "应用已卸载"
+                            ;;
+                        0)
+                            break  # 跳出循环，退出菜单
+                            ;;
+                        *)
+                            break  # 跳出循环，退出菜单
+                            ;;
+                    esac
+            else
+                clear
+                echo "安装提示"
+                echo "portainer是一个轻量级的docker容器管理面板"
+                echo "官网介绍: https://www.portainer.io/"
+                echo ""
+
+                # 提示用户确认安装
+                read -p "确定安装吗？(Y/N): " choice
+                case "$choice" in
+                    [Yy])
+                    clear
+                    install_docker
+
+                    docker run -d \
+                    --name portainer \
+                    -p 9050:9000 \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v /home/docker/portainer:/data \
+                    --restart always \
+                    portainer/portainer
+
+                    clear
+                    echo "portainer已经安装完成"
+                    echo "------------------------"
+                    echo "您可以使用以下地址访问:"
+                    external_ip=$(curl -s ipv4.ip.sb)
+                    echo "http:$external_ip:9050"
+                    echo ""
+
+                        ;;
+                    [Nn])
+                        ;;
+                    *)
+                        ;;
+                esac
+            fi
+
+              ;;
+
+          21)
+            if docker inspect vscode-web &>/dev/null; then
+
+                    clear
+                    echo "VScode已安装，访问地址: "
+                    external_ip=$(curl -s ipv4.ip.sb)
+                    echo "http:$external_ip:8180"
+                    echo ""
+
+                    echo "应用操作"
+                    echo "------------------------"
+                    echo "1. 更新应用             2. 卸载应用"
+                    echo "------------------------"
+                    echo "0. 返回上一级选单"
+                    echo "------------------------"
+                    read -p "请输入你的选择: " sub_choice
+
+                    case $sub_choice in
+                        1)
+                            clear
+                            docker rm -f vscode-web
+                            docker rmi -f codercom/code-server
+                            install_docker
+
+                            docker run -d -p 8180:8080 -v /home/docker/code-server:/home/coder/.local/share/code-server --name vscode-web --restart always codercom/code-server
+
+                            clear
+                            echo "VScode已经安装完成"
+                            echo "------------------------"
+                            echo "您可以使用以下地址访问:"
+                            external_ip=$(curl -s ipv4.ip.sb)
+                            echo "http:$external_ip:8180"
+                            echo ""
+                            sleep 3
+                            docker exec vscode-web cat /home/coder/.config/code-server/config.yaml
+
+                            ;;
+                        2)
+                            clear
+                            docker rm -f vscode-web
+                            docker rmi -f codercom/code-server
+                            rm -rf /home/docker/code-server
+                            echo "应用已卸载"
+                            ;;
+                        0)
+                            break  # 跳出循环，退出菜单
+                            ;;
+                        *)
+                            break  # 跳出循环，退出菜单
+                            ;;
+                    esac
+            else
+                clear
+                echo "安装提示"
+                echo "VScode是一款强大的在线代码编写工具"
+                echo "官网介绍: https://github.com/coder/code-server"
+                echo ""
+
+                # 提示用户确认安装
+                read -p "确定安装吗？(Y/N): " choice
+                case "$choice" in
+                    [Yy])
+                    clear
+                    install_docker
+                    docker run -d -p 8180:8080 -v /home/docker/code-server:/home/coder/.local/share/code-server --name vscode-web --restart always codercom/code-server
+
+                    clear
+                    echo "portainer已经安装完成"
+                    echo "------------------------"
+                    echo "您可以使用以下地址访问:"
+                    external_ip=$(curl -s ipv4.ip.sb)
+                    echo "http:$external_ip:8180"
+                    echo ""
+                    sleep 3
+                    docker exec vscode-web cat /home/coder/.config/code-server/config.yaml
+
+                        ;;
+                    [Nn])
+                        ;;
+                    *)
+                        ;;
+                esac
+            fi
+
+              ;;
+
 
           0)
               cd ~
@@ -4054,13 +4217,7 @@ case $choice in
       case $sub_choice in
           a)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y tmux
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install tmux
-              else
-                  echo "未知的包管理器!"
-              fi
+              install tmux
 
               ;;
           1)
@@ -4190,7 +4347,8 @@ case $choice in
       echo "16. 开启BBR3加速"
       echo "17. 防火墙高级管理器"
       echo "18. 修改主机名"
-      echo -e "19. 切换系统更新源 \033[36mBeta\033[0m"
+      echo "19. 切换系统更新源"
+      echo -e "20. 定时任务管理 \033[33mNEW\033[0m"
       echo "------------------------"
       echo "21. 留言板"
       echo "------------------------"
@@ -4204,7 +4362,7 @@ case $choice in
           1)
               clear
               read -p "请输入你的快捷按键: " kuaijiejian
-              echo "alias $kuaijiejian='curl -sS -O https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh && chmod +x kejilion.sh && ./kejilion.sh'" >> ~/.bashrc
+              echo "alias $kuaijiejian='./kejilion.sh'" >> ~/.bashrc
               echo "快捷键已添加。请重新启动终端，或运行 'source ~/.bashrc' 以使修改生效。"
               ;;
 
@@ -4443,7 +4601,7 @@ case $choice in
               done
 
               read -p "请输入你重装后的密码: " vpspasswd
-              install_wget
+              install wget
               bash <(wget --no-check-certificate -qO- 'https://raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh') $xitong -v 64 -p $vpspasswd -port 22
               ;;
             [Nn])
@@ -4458,15 +4616,7 @@ case $choice in
 
           9)
             clear
-            if ! command -v sudo &>/dev/null; then
-                if command -v apt &>/dev/null; then
-                    apt update -y && apt install -y sudo
-                elif command -v yum &>/dev/null; then
-                    yum -y update && yum -y install sudo
-                else
-                    exit 1
-                fi
-            fi
+            install sudo
 
             # 提示用户输入新用户名
             read -p "请输入新用户名: " new_username
@@ -4592,6 +4742,8 @@ case $choice in
           13)
               while true; do
                 clear
+                install sudo
+                clear
                 # 显示所有用户、用户权限、用户组和是否在sudoers中
                 echo "用户列表"
                 echo "----------------------------------------------------------------------------"
@@ -4618,16 +4770,6 @@ case $choice in
 
                   case $sub_choice in
                       1)
-                       if ! command -v sudo &>/dev/null; then
-                           if command -v apt &>/dev/null; then
-                               apt update -y && apt install -y sudo
-                           elif command -v yum &>/dev/null; then
-                               yum -y update && yum -y install sudo
-                           else
-                               echo ""
-                           fi
-                       fi
-
                        # 提示用户输入新用户名
                        read -p "请输入新用户名: " new_username
 
@@ -4639,16 +4781,6 @@ case $choice in
                           ;;
 
                       2)
-                       if ! command -v sudo &>/dev/null; then
-                           if command -v apt &>/dev/null; then
-                               apt update -y && apt install -y sudo
-                           elif command -v yum &>/dev/null; then
-                               yum -y update && yum -y install sudo
-                           else
-                               echo ""
-                           fi
-                       fi
-
                        # 提示用户输入新用户名
                        read -p "请输入新用户名: " new_username
 
@@ -4663,49 +4795,20 @@ case $choice in
 
                           ;;
                       3)
-                       if ! command -v sudo &>/dev/null; then
-                           if command -v apt &>/dev/null; then
-                               apt update -y && apt install -y sudo
-                           elif command -v yum &>/dev/null; then
-                               yum -y update && yum -y install sudo
-                           else
-                               echo ""
-                           fi
-                       fi
-
                        read -p "请输入用户名: " username
                        # 赋予新用户sudo权限
                        echo "$username ALL=(ALL:ALL) ALL" | sudo tee -a /etc/sudoers
                           ;;
                       4)
-                       if ! command -v sudo &>/dev/null; then
-                           if command -v apt &>/dev/null; then
-                               apt update -y && apt install -y sudo
-                           elif command -v yum &>/dev/null; then
-                               yum -y update && yum -y install sudo
-                           else
-                               echo ""
-                           fi
-                       fi
                        read -p "请输入用户名: " username
                        # 从sudoers文件中移除用户的sudo权限
                        sudo sed -i "/^$username\sALL=(ALL:ALL)\sALL/d" /etc/sudoers
 
                           ;;
                       5)
-                       if ! command -v sudo &>/dev/null; then
-                           if command -v apt &>/dev/null; then
-                               apt update -y && apt install -y sudo
-                           elif command -v yum &>/dev/null; then
-                               yum -y update && yum -y install sudo
-                           else
-                               echo ""
-                           fi
-                       fi
                        read -p "请输入要删除的用户名: " username
                        # 删除用户及其主目录
                        sudo userdel -r "$username"
-
                           ;;
 
                       0)
@@ -5434,10 +5537,62 @@ EOF
 
               ;;
 
+          20)
+
+              while true; do
+                  clear
+                  echo "定时任务列表"
+                  crontab -l
+                  echo ""
+                  echo "操作"
+                  echo "------------------------"
+                  echo "1. 添加定时任务              2. 删除定时任务"
+                  echo "------------------------"
+                  echo "0. 返回上一级选单"
+                  echo "------------------------"
+                  read -p "请输入你的选择: " sub_choice
+
+                  case $sub_choice in
+                      1)
+                          read -p "请输入新任务的执行命令: " newquest
+                          echo "------------------------"
+                          echo "1. 每周任务                 2. 每天任务"
+                          read -p "请输入你的选择: " dingshi
+
+                          case $dingshi in
+                              1)
+                                  read -p "选择周几执行任务？ (0-6，0代表星期日): " weekday
+                                  (crontab -l ; echo "0 0 * * $weekday $newquest") | crontab - > /dev/null 2>&1
+                                  ;;
+                              2)
+                                  read -p "选择每天几点执行任务？（小时，0-23）: " hour
+                                  (crontab -l ; echo "0 $hour * * * $newquest") | crontab - > /dev/null 2>&1
+                                  ;;
+                              *)
+                                  break  # 跳出
+                                  ;;
+                          esac
+                          ;;
+                      2)
+                          read -p "请输入需要删除任务的关键字: " kquest
+                          crontab -l | grep -v "$kquest" | crontab -
+                          ;;
+                      0)
+                          break  # 跳出循环，退出菜单
+                          ;;
+
+                      *)
+                          break  # 跳出循环，退出菜单
+                          ;;
+                  esac
+              done
+
+              ;;
+
 
           21)
           clear
-          install_sshpass
+          install sshpass
 
           remote_ip="66.42.61.110"
           remote_user="liaotian123"
@@ -5495,245 +5650,19 @@ EOF
     done
     ;;
 
-
   00)
-    clear
-    echo "脚本更新日志"
-    echo  "------------------------"
-    echo "2023-8-13   v1.0.3"
-    echo "1.甲骨文云的DD脚本，添加了Ubuntu 20.04的重装选项。"
-    echo "2.LDNMP建站，开放了苹果CMS网站的搭建功能."
-    echo "3.系统信息查询，增加了内核版本显示，美化了界面。"
-    echo "4.甲骨文脚本中，添加了开启ROOT登录的选项。"
-    echo "------------------------"
-    echo "2023-8-13   v1.0.4"
-    echo "1.LDNMP建站，开放了独角数卡网站的搭建功能."
-    echo "2.LDNMP建站，优化了备份全站到远端服务器的稳定性."
-    echo "3.Docker管理，全局状态信息，添加了所有docker卷的显示."
-    echo "------------------------"
-    echo "2023-8-14   v1.1"
-    echo "Docker管理器全面升级，体验前所未有！"
-    echo "-加入了docker容器管理面板"
-    echo "-加入了docker镜像管理面板"
-    echo "-加入了docker网络管理面板"
-    echo "-加入了docker卷管理面板"
-    echo "-删除docker时追加确认信息，拒绝误操作"
-    echo "------------------------"
-    echo "2023-8-14   v1.2"
-    echo "1.新增了11选项，加入了常用面板工具合集！"
-    echo "-支持安装各种面板，包括: 宝塔，宝塔国际版，1panel，Nginx Proxy Manager等等，满足更多人群的使用需求！"
-    echo "2.优化了菜单效果"
-    echo "------------------------"
-    echo "2023-8-14   v1.3"
-    echo "新增了12选项，我的工作区功能"
-    echo "-将为你提供5个后台运行的工作区，用来执行后台任务。即使你断开SSH也不会中断，"
-    echo "-非常有意思的功能，快去试试吧！"
-    echo "------------------------"
-    echo "2023-8-14   v1.3.2"
-    echo "新增了13选项，系统工具"
-    echo "科技lion一键脚本可以通过设置快捷键唤醒打开了，我设置的k作为脚本打开的快捷键！无需复制长命令了"
-    echo "加入了ROOT密码修改，切换成ROOT登录模式"
-    echo "系统设置中还有很多功能没开发，敬请期待！"
-    echo "------------------------"
-    echo "2023-8-15   v1.4"
-    echo "全面适配Centos系统，实现Ubuntu，Debian，Centos三大主流系统的适配"
-    echo "优化LDNMP中PHP输入数据最大时间，解决WordPress网站导入部分主题失败的问题"
-    echo "------------------------"
-    echo "2023-8-15   v1.4.1"
-    echo "选项13，系统工具中，加入了安装Python最新版的选项，感谢群友春风得意马蹄疾的投稿！很好用！"
-    echo "------------------------"
-    echo "2023-8-15   v1.4.2"
-    echo "docker管理中增加容器日志查看"
-    echo "选项13，系统工具中，加入了留言板的选项，可以留下你的宝贵意见也可以在这里聊天，贼好玩！"
-    echo "------------------------"
-    echo "2023-8-15   v1.4.5"
-    echo "优化了信息查询运行效率"
-    echo "信息查询新增了地理位置显示"
-    echo "优化了脚本内系统判断机制！"
-    echo "------------------------"
-    echo "2023-8-16   v1.4.6"
-    echo "LDNMP建站中加入了删除站点删除数据库功能"
-    echo "------------------------"
-    echo "2023-8-16   v1.4.7"
-    echo "选项11中，增加了一键搭建alist多存储文件列表工具的"
-    echo "选项11中，增加了一键搭建网页版乌班图远程桌面"
-    echo "选项13中，增加了开放所有端口功能"
-    echo "------------------------"
-    echo "2023-8-16   v1.4.8"
-    echo "系统信息查询中，终于可以显示总流量消耗了！总接收和总发送两个信息"
-    echo "------------------------"
-    echo "2023-8-17   v1.4.9"
-    echo "系统工具中新增SSH端口修改功能"
-    echo "系统工具中新增优化DNS地址功能"
-    echo "------------------------"
-    echo "2023-8-18   v1.5"
-    echo "系统性优化了代码，去除了无效的代码与空格"
-    echo "系统信息查询添加了系统时间"
-    echo "禁用ROOT账户，创建新的账户，更安全！"
-    echo "------------------------"
-    echo "2023-8-18   v1.5.1"
-    echo "LDNMP加入了安装bingchatAI聊天网站"
-    echo "面板工具中添加了哪吒探针脚本整合"
-    echo "------------------------"
-    echo "2023-8-18   v1.5.2"
-    echo "LDNMP加入了更新LDNMP选项"
-    echo "------------------------"
-    echo "2023-8-19   v1.5.3"
-    echo "面板工具添加安装QB离线BT磁力下载面板"
-    echo "优化IP获取源"
-    echo "------------------------"
-    echo "2023-8-20   v1.5.4"
-    echo "面板工具已安装的工具支持状态检测，可以进行删除了！"
-    echo "------------------------"
-    echo "2023-8-21   v1.5.5"
-    echo "系统工具中添加优先ipv4/ipv6选项"
-    echo "系统工具中添加查看端口占用状态选项"
-    echo "------------------------"
-    echo "2023-8-21   v1.5.6"
-    echo "LDNMP建站添加了定时自动远程备份功能"
-    echo "------------------------"
-    echo "2023-8-22   v1.5.7"
-    echo "面板工具增加了邮件服务器搭建，请确保服务器的25.80.443开放"
-    echo "------------------------"
-    echo "2023-8-23   v1.5.8"
-    echo "面板工具增加了聊天系统搭建"
-    echo "------------------------"
-    echo "2023-8-24   v1.5.9"
-    echo "面板工具增加了禅道项目管理软件搭建"
-    echo "------------------------"
-    echo "2023-8-24   v1.6"
-    echo "面板工具增加了青龙面板搭建"
-    echo "调整了面板工具列表的排版显示效果"
-    echo "------------------------"
-    echo "2023-8-27   v1.6.1"
-    echo "LDNMP大幅优化安装体验，添加安装进度条和百分比显示，太刁了！"
-    echo "------------------------"
-    echo "2023-8-28   v1.6.2"
-    echo "docker管理可以显示容器所属网络，并且可以加入网络和退出网络了"
-    echo "------------------------"
-    echo "2023-8-28   v1.6.3"
-    echo "系统工具中增加修改虚拟内存大小的选项"
-    echo "系统信息查询中显示虚拟内存占用"
-    echo "------------------------"
-    echo "2023-8-29   v1.6.4"
-    echo "面板工具加入cloudreve网盘的搭建"
-    echo "面板工具加入简单图床程序搭建"
-    echo "------------------------"
-    echo "2023-8-29   v1.6.5"
-    echo "LDNMP加入了高逼格的flarum论坛搭建"
-    echo "面板工具加入简单图床程序搭建"
-    echo "------------------------"
-    echo "2023-9-1   v1.6.6"
-    echo "LDNMP环境安装时用户密码将随机生成，提升安全性，安装环境更简单！"
-    echo "LDNMP环境安装时如果安装过docker将自动跳过，节省安装时间"
-    echo "LDNMP环境更新WordPress到6.3.1版本"
-    echo "------------------------"
-    echo "2023-9-1   v1.6.7"
-    echo "添加了账户管理功能，查看当前账户列表，添加删除账户，账号权限管理等"
-    echo "------------------------"
-    echo "2023-9-4   v1.6.8"
-    echo "独角数卡登录时报错，显示解决办法"
-    echo "------------------------"
-    echo "2023-9-6   v1.6.9"
-    echo "系统工具中添加随机用户密码生成器，方便懒得想用户名和密码的小伙伴"
-    echo "优化了所有搭建网站与面板后的信息复制体验"
-    echo "------------------------"
-    echo "2023-9-11   v1.7"
-    echo "面板工具中添加emby多媒体管理系统的搭建"
-    echo "------------------------"
-    echo "2023-9-15   v1.7.1"
-    echo "LDNMP建站中可以搭建Bitwarden密码管理平台了"
-    echo "------------------------"
-    echo "2023-9-18   v1.7.2"
-    echo "LDNMP建站将站点信息查询和站点管理合并"
-    echo "LDNMP站点管理中添加证书重新申请和站点更换域名的功能"
-    echo "------------------------"
-    echo "2023-9-25   v1.8"
-    echo "LDNMP建站增加了服务器与网站防护功能，防御暴力破解，防御网站被攻击"
-    echo "------------------------"
-    echo "2023-9-28   v1.8.2"
-    echo "LDNMP建站优化了运行速度和安全性，增加了频率限制"
-    echo "LDNMP建站优化了防御程序的高可用性"
-    echo "------------------------"
-    echo "2023-10-3   v1.8.3"
-    echo "系统工具增加系统时区切换功能"
-    echo "------------------------"
-    echo "2023-10-7   v1.8.4"
-    echo "LDNMP建站添加halo博客网站搭建"
-    echo "------------------------"
-    echo "2023-10-12   v1.8.5"
-    echo "LDNMP建站添加优化LDNMP环境选项，可以开启高性能模式，大幅提升网站性能，应对高并发！"
-    echo "------------------------"
-    echo "2023-10-14   v1.8.6"
-    echo "面板工具增加了测速流量监控面板的安装"
-    echo "------------------------"
-    echo "2023-10-16   v1.8.7"
-    echo "系统工具中添加开启BBR3加速功能"
-    echo "------------------------"
-    echo "2023-10-18   v1.8.8"
-    echo "系统工具中优化BBR3加速安装流程，可根据CPU型号自行安装适合的内核版本"
-    echo "------------------------"
-    echo "2023-10-19   v1.8.9"
-    echo "系统工具中BBRv3功能增加了更新内核和卸载内核功能"
-    echo "------------------------"
-    echo "2023-10-21   v1.9"
-    echo "开放端口相关优化"
-    echo "解决部分系统SSH端口切换后重启失联的问题"
-    echo "------------------------"
-    echo "2023-10-26   v1.9.1"
-    echo "LNMP建站管理中添加了站点缓存清理功能"
-    echo "面板工具中卸载对应应用时添加了应用目录一并删除，删除更彻底！"
-    echo "------------------------"
-    echo "2023-10-28   v1.9.2"
-    echo "系统工具中修复了虚拟内存大小重启后还原的问题"
-    echo "------------------------"
-    echo "2023-11-07   v1.9.3"
-    echo "面板工具中增加AdGuardHome去广告软件安装和管理"
-    echo "------------------------"
-    echo "2023-11-08   v1.9.4"
-    echo "系统工具添加了防火墙高级管理功能，可以开关端口，可以IP黑白名单"
-    echo "未来会上线地域黑白名单等高级功能"
-    echo "------------------------"
-    echo "2023-11-09   v1.9.5"
-    echo "系统工具中防火墙添加udp控制"
-    echo "------------------------"
-    echo "2023-11-10   v1.9.6"
-    echo "测试脚本合集增加了缝合怪一条龙测试"
-    echo "系统信息查询中添加了系统运行时长显示"
-    echo "------------------------"
-    echo "2023-11-10   v1.9.7"
-    echo "LDNMP建站增加typecho轻量博客的搭建"
-    echo "------------------------"
-    echo "2023-11-16   v1.9.8"
-    echo "面板工具中增加了在线office办公软件安装"
-    echo "------------------------"
-    echo "2023-11-21   v1.9.9"
-    echo "面板工具中增加了雷池WAF防火墙程序安装"
-    echo "------------------------"
-    echo "2023-11-28   v2.0"
-    echo "LDNMP建站中增加仅安装nginx的选项专门服务于站点重定向和站点反向代理"
-    echo "精简无用的代码，优化执行效率"
-    echo "------------------------"
-    echo "2023-11-29   v2.0.1"
-    echo "LDNMP建站改用cerbot申请证书，更稳定更快速。弃用acme"
-    echo "------------------------"
-    echo "2023-11-30   v2.0.2"
-    echo "面板工具修复QB无法登录问题"
-    echo "面板工具修复RocketChat进入后无限加载问题"
-    echo "系统工具中添加修改主机名功能"
-    echo "系统工具中添加服务器重启功能"
-    echo "------------------------"
-    echo "2023-12-04   v2.0.3"
-    echo "LDNMP建站过程中增加了nginx自我检测修复功能"
-    echo "系统工具添加更新源切换功能，请先在测试环境使用"
-    echo "LDNMP建站增加自定义上传静态html界面功能"
-    echo "------------------------"
-    echo "2023-12-05   v2.0.4"
-    echo "LDNMP建站中仅安装nginx功能添加安装成功提示，更优雅直观"
-    echo "LDNMP建站中仅安装nginx功能支持自动更新nginx版本"
-    echo "优化代码细节，定义调用函数，脚本执行更简洁，提升效率"
-    echo "------------------------"
-
+    cd ~
+    curl -sS -O https://raw.githubusercontent.com/kejilion/sh/main/update_log.sh && chmod +x update_log.sh && ./update_log.sh
+    rm update_log.sh
+    echo ""
+    curl -sS -O https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh && chmod +x kejilion.sh
+    echo "脚本已更新到最新版本！"
+    echo -e "\033[0;32m操作完成\033[0m"
+    echo "按任意键继续..."
+    read -n 1 -s -r -p ""
+    echo ""
+    ./kejilion.sh
+    exit
     ;;
 
   0)
