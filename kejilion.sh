@@ -1,19 +1,89 @@
 #!/bin/bash
 
 install() {
-    local package=$1
-    if ! command -v $package &>/dev/null; then
+    if [ $# -eq 0 ]; then
+        echo "未提供软件包参数!"
+        return 1
+    fi
+
+    for package in "$@"; do
+        if ! command -v "$package" &>/dev/null; then
+            if command -v apt &>/dev/null; then
+                apt update -y && apt install -y "$package"
+            elif command -v yum &>/dev/null; then
+                yum -y update && yum -y install "$package"
+            else
+                echo "未知的包管理器!"
+                return 1
+            fi
+        fi
+    done
+
+    return 0
+}
+
+install_dependency() {
+      clear
+      install wget socat unzip tar
+}
+
+
+remove() {
+    if [ $# -eq 0 ]; then
+        echo "未提供软件包参数!"
+        return 1
+    fi
+
+    for package in "$@"; do
         if command -v apt &>/dev/null; then
-            apt update -y && apt install -y $package
+            apt purge -y "$package"
         elif command -v yum &>/dev/null; then
-            yum -y update && yum -y install $package
+            yum remove -y "$package"
         else
             echo "未知的包管理器!"
             return 1
         fi
-    fi
+    done
+
     return 0
 }
+
+break_end() {
+      echo -e "\033[0;32m操作完成\033[0m"
+      echo "按任意键继续..."
+      read -n 1 -s -r -p ""
+      echo ""
+      clear
+}
+
+check_port() {
+    # 定义要检测的端口
+    PORT=80
+
+    # 检查端口占用情况
+    result=$(ss -tulpn | grep ":$PORT")
+
+    # 判断结果并输出相应信息
+    if [ -n "$result" ]; then
+        is_nginx_container=$(docker ps --format '{{.Names}}' | grep 'nginx')
+
+        # 判断是否是Nginx容器占用端口
+        if [ -n "$is_nginx_container" ]; then
+            echo ""
+        else
+            clear
+            echo -e "\e[1;31m端口 $PORT 已被占用，无法安装环境，卸载以下程序后重试！\e[0m"
+            echo "$result"
+            break_end
+            cd ~
+            ./kejilion.sh
+            exit
+        fi
+    else
+        echo ""
+    fi
+}
+
 
 # 定义安装 Docker 的函数
 install_docker() {
@@ -67,8 +137,7 @@ install_ldnmp() {
           "docker exec nginx chmod -R 777 /var/www/html"
           "docker exec php chmod -R 777 /var/www/html"
           "docker exec php74 chmod -R 777 /var/www/html"
-        #   "docker restart mysql > /dev/null 2>&1"
-        #   "docker restart redis > /dev/null 2>&1"
+
           "docker restart php > /dev/null 2>&1"
           "docker restart php74 > /dev/null 2>&1"
           "docker restart nginx > /dev/null 2>&1"
@@ -142,21 +211,13 @@ install_certbot() {
 }
 
 install_ssltls() {
-    #   docker stop nginx
-    #   iptables_open
-    #   cd ~
-    #   curl https://get.acme.sh | sh
-    #   ~/.acme.sh/acme.sh --register-account -m xxxx@gmail.com --issue -d $yuming --standalone --key-file /home/web/certs/${yuming}_key.pem --cert-file /home/web/certs/${yuming}_cert.pem --force
-    #   docker start nginx
-
-      docker stop nginx
+      docker stop nginx > /dev/null 2>&1
       iptables_open
       cd ~
       certbot certonly --standalone -d $yuming --email your@email.com --agree-tos --no-eff-email --force-renewal
       cp /etc/letsencrypt/live/$yuming/cert.pem /home/web/certs/${yuming}_cert.pem
       cp /etc/letsencrypt/live/$yuming/privkey.pem /home/web/certs/${yuming}_key.pem
-      docker start nginx
-
+      docker start nginx > /dev/null 2>&1
 }
 
 
@@ -185,6 +246,43 @@ nginx_status() {
 }
 
 
+add_yuming() {
+      external_ip=$(curl -s ipv4.ip.sb)
+      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
+      read -p "请输入你解析的域名: " yuming
+}
+
+
+add_db() {
+      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
+      dbname="${dbname}"
+
+      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
+      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
+      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
+      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
+}
+
+reverse_proxy() {
+      external_ip=$(curl -s ipv4.ip.sb)
+      wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy.conf
+      sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
+      sed -i "s/0.0.0.0/$external_ip/g" /home/web/conf.d/$yuming.conf
+      sed -i "s/0000/3099/g" /home/web/conf.d/$yuming.conf
+      docker restart nginx
+}
+
+restart_ldnmp() {
+      docker exec nginx chmod -R 777 /var/www/html
+      docker exec php chmod -R 777 /var/www/html
+      docker exec php74 chmod -R 777 /var/www/html
+
+      docker restart php
+      docker restart php74
+      docker restart nginx
+}
+
+
 
 while true; do
 clear
@@ -193,7 +291,7 @@ echo -e "\033[96m_  _ ____  _ _ _    _ ____ _  _ "
 echo "|_/  |___  | | |    | |  | |\ | "
 echo "| \_ |___ _| | |___ | |__| | \| "
 echo "                                "
-echo -e "\033[96m科技lion一键脚本工具 v2.0.8 （支持Ubuntu/Debian/CentOS系统）\033[0m"
+echo -e "\033[96m科技lion一键脚本工具 v2.1 （支持Ubuntu/Debian/CentOS系统）\033[0m"
 echo "------------------------"
 echo "1. 系统信息查询"
 echo "2. 系统更新"
@@ -358,33 +456,42 @@ case $choice in
     ;;
 
   3)
-  clear
+    clear
+    clean_debian() {
+        apt autoremove --purge -y
+        apt clean -y
+        apt autoclean -y
+        apt remove --purge $(dpkg -l | awk '/^rc/ {print $2}') -y
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+        journalctl --vacuum-size=50M
+        apt remove --purge $(dpkg -l | awk '/^ii linux-(image|headers)-[^ ]+/{print $2}' | grep -v $(uname -r | sed 's/-.*//') | xargs) -y
+    }
 
-  if [ -f "/etc/debian_version" ]; then
-      # Debian-based systems
-      apt autoremove --purge -y
-      apt clean -y
-      apt autoclean -y
-      apt remove --purge $(dpkg -l | awk '/^rc/ {print $2}') -y
-      journalctl --rotate
-      journalctl --vacuum-time=1s
-      journalctl --vacuum-size=50M
-      apt remove --purge $(dpkg -l | awk '/^ii linux-(image|headers)-[^ ]+/{print $2}' | grep -v $(uname -r | sed 's/-.*//') | xargs) -y
-  elif [ -f "/etc/redhat-release" ]; then
-      # Red Hat-based systems
-      yum autoremove -y
-      yum clean all
-      journalctl --rotate
-      journalctl --vacuum-time=1s
-      journalctl --vacuum-size=50M
-      yum remove $(rpm -q kernel | grep -v $(uname -r)) -y
-  fi
+    clean_redhat() {
+        yum autoremove -y
+        yum clean all
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+        journalctl --vacuum-size=50M
+        yum remove $(rpm -q kernel | grep -v $(uname -r)) -y
+    }
+
+    # Main script
+    if [ -f "/etc/debian_version" ]; then
+        # Debian-based systems
+        clean_debian
+    elif [ -f "/etc/redhat-release" ]; then
+        # Red Hat-based systems
+        clean_redhat
+    fi
+
     ;;
 
   4)
   while true; do
-      echo " ▼ "
-      echo "安装常用工具"
+      clear
+      echo "▶ 安装常用工具"
       echo "------------------------"
       echo "1. curl 下载工具"
       echo "2. wget 下载工具"
@@ -396,15 +503,18 @@ case $choice in
       echo "8. tar GZ压缩解压工具"
       echo "9. tmux 多路后台运行工具"
       echo "10. ffmpeg 视频编码直播推流工具"
-      echo -e "11. btop 现代化监控工具 \033[33mNEW\033[0m" 
-      echo -e "12. ranger 文件管理工具 \033[33mNEW\033[0m"      
-      echo -e "13. gdu 磁盘占用查看工具 \033[33mNEW\033[0m"
-      echo -e "14. fzf 全局搜索工具 \033[33mNEW\033[0m"                   
+      echo "11. btop 现代化监控工具"
+      echo "12. ranger 文件管理工具"
+      echo "13. gdu 磁盘占用查看工具"
+      echo "14. fzf 全局搜索工具"
       echo "------------------------"
-      echo -e "21. cmatrix 黑客帝国屏保 \033[33mNEW\033[0m"
-      echo "------------------------"     
+      echo "21. cmatrix 黑客帝国屏保"
+      echo "------------------------"
       echo "31. 全部安装"
       echo "32. 全部卸载"
+      echo "------------------------"
+      echo -e "41. 安装指定工具 \033[33mNEW\033[0m"
+      echo -e "42. 卸载指定工具 \033[33mNEW\033[0m"
       echo "------------------------"
       echo "0. 返回主菜单"
       echo "------------------------"
@@ -415,21 +525,21 @@ case $choice in
               clear
               install curl
               clear
-              echo "工具已安装，使用方法如下："              
+              echo "工具已安装，使用方法如下："
               curl --help
               ;;
           2)
               clear
               install wget
               clear
-              echo "工具已安装，使用方法如下："              
+              echo "工具已安装，使用方法如下："
               wget --help
               ;;
             3)
               clear
               install sudo
               clear
-              echo "工具已安装，使用方法如下："                
+              echo "工具已安装，使用方法如下："
               sudo --help
               ;;
             4)
@@ -442,11 +552,13 @@ case $choice in
             5)
               clear
               install htop
+              clear
               htop
               ;;
             6)
               clear
               install iftop
+              clear
               iftop
               ;;
             7)
@@ -460,40 +572,43 @@ case $choice in
               clear
               install tar
               clear
-              echo "工具已安装，使用方法如下："              
+              echo "工具已安装，使用方法如下："
               tar --help
               ;;
             9)
               clear
               install tmux
               clear
-              echo "工具已安装，使用方法如下："     
-              tmux --help                       
+              echo "工具已安装，使用方法如下："
+              tmux --help
               ;;
             10)
               clear
               install ffmpeg
               clear
-              echo "工具已安装，使用方法如下："     
-              ffmpeg --help                       
+              echo "工具已安装，使用方法如下："
+              ffmpeg --help
               ;;
 
             11)
               clear
               install btop
+              clear
               btop
               ;;
             12)
               clear
               install ranger
               cd /
+              clear
               ranger
               cd ~
-              ;;              
+              ;;
             13)
               clear
               install gdu
               cd /
+              clear
               gdu
               cd ~
               ;;
@@ -501,6 +616,7 @@ case $choice in
               clear
               install fzf
               cd /
+              clear
               fzf
               cd ~
               ;;
@@ -508,29 +624,29 @@ case $choice in
             21)
               clear
               install cmatrix
+              clear
               cmatrix
-              ;;                            
+              ;;
 
           31)
               clear
-              if command -v apt &>/dev/null; then
-                  apt update -y && apt install -y curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger gdu fzf cmatrix
-              elif command -v yum &>/dev/null; then
-                  yum -y update && yum -y install curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger gdu fzf cmatrix
-              else
-                  echo "未知的包管理器!"
-              fi
+              install curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger gdu fzf cmatrix
               ;;
 
           32)
               clear
-              if command -v apt &>/dev/null; then
-                  apt purge -y htop iftop unzip tmux ffmpeg btop ranger gdu fzf cmatrix
-              elif command -v yum &>/dev/null; then
-                  yum -y remove htop iftop unzip tmux ffmpeg btop ranger gdu fzf cmatrix
-              else
-                  echo "未知的包管理器!"
-              fi
+              remove htop iftop unzip tmux ffmpeg btop ranger gdu fzf cmatrix
+              ;;
+
+          41)
+              clear
+              read -p "请输入安装的工具名（wget curl sudo htop）: " installname
+              install $installname
+              ;;
+          42)
+              clear
+              read -p "请输入卸载的工具名（htop ufw tmux cmatrix）: " removename
+              remove $removename
               ;;
 
           0)
@@ -543,11 +659,7 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
   done
 
     ;;
@@ -562,8 +674,8 @@ case $choice in
 
   6)
     while true; do
-      echo " ▼ "
-      echo "Docker管理器"
+      clear
+      echo "▶ Docker管理器"
       echo "------------------------"
       echo "1. 安装更新Docker环境"
       echo "------------------------"
@@ -677,20 +789,12 @@ case $choice in
                       11)
                           read -p "请输入容器名: " dockername
                           docker exec -it $dockername /bin/bash
-                          echo -e "\033[0;32m操作完成\033[0m"
-                          echo "按任意键继续..."
-                          read -n 1 -s -r -p ""
-                          echo ""
-                          clear
+                          break_end
                           ;;
                       12)
                           read -p "请输入容器名: " dockername
                           docker logs $dockername
-                          echo -e "\033[0;32m操作完成\033[0m"
-                          echo "按任意键继续..."
-                          read -n 1 -s -r -p ""
-                          echo ""
-                          clear
+                          break_end
                           ;;
                       13)
                           echo ""
@@ -713,11 +817,7 @@ case $choice in
                               done <<< "$network_info"
                           done
 
-                          echo -e "\033[0;32m操作完成\033[0m"
-                          echo "按任意键继续..."
-                          read -n 1 -s -r -p ""
-                          echo ""
-                          clear
+                          break_end
                           ;;
 
                       0)
@@ -910,9 +1010,7 @@ case $choice in
               case "$choice" in
                 [Yy])
                   docker rm $(docker ps -a -q) && docker rmi $(docker images -q) && docker network prune
-                  apt-get remove docker -y
-                  apt-get remove docker-ce -y
-                  apt-get purge docker-ce -y
+                  remove docker docker-ce > /dev/null 2>&1
                   rm -rf /var/lib/docker
                   ;;
                 [Nn])
@@ -931,11 +1029,8 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
 
     done
 
@@ -950,9 +1045,8 @@ case $choice in
 
   8)
     while true; do
-
-      echo " ▼ "
-      echo "测试脚本合集"
+      clear
+      echo "▶ 测试脚本合集"
       echo "------------------------"
       echo "1. ChatGPT解锁状态检测"
       echo "2. Region流媒体解锁测试"
@@ -1019,18 +1113,15 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
     done
     ;;
 
   9)
      while true; do
-      echo " ▼ "
-      echo "甲骨文云脚本合集"
+      clear
+      echo "▶ 甲骨文云脚本合集"
       echo "------------------------"
       echo "1. 安装闲置机器活跃脚本"
       echo "2. 卸载闲置机器活跃脚本"
@@ -1148,11 +1239,8 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
     done
     ;;
 
@@ -1160,8 +1248,8 @@ case $choice in
   10)
 
   while true; do
-    echo -e "\033[33m ▼ \033[0m"
-    echo -e "\033[33mLDNMP建站\033[0m"
+    clear
+    echo -e "\033[33m▶ LDNMP建站\033[0m"
     echo  "------------------------"
     echo  "1. 安装LDNMP环境"
     echo  "------------------------"
@@ -1199,24 +1287,8 @@ case $choice in
 
     case $sub_choice in
       1)
-      clear
-      # 更新并安装必要的软件包
-      if command -v apt &>/dev/null; then
-          apt update -y
-          apt install -y curl wget sudo socat unzip tar htop
-      elif command -v yum &>/dev/null; then
-          yum -y update
-          yum -y install curl
-          yum -y install wget
-          yum -y install sudo
-          yum -y install socat
-          yum -y install unzip
-          yum -y install tar
-          yum -y install htop
-      else
-          echo "未知的包管理器!"
-      fi
-
+      check_port
+      install_dependency
       install_docker
       install_certbot
 
@@ -1244,13 +1316,9 @@ case $choice in
       2)
       clear
       # wordpress
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/wordpress.com.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
@@ -1264,18 +1332,7 @@ case $choice in
 
       echo "define('FS_METHOD', 'direct'); define('WP_REDIS_HOST', 'redis'); define('WP_REDIS_PORT', '6379');" >> /home/web/html/$yuming/wordpress/wp-config-sample.php
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
       clear
       echo "您的WordPress搭建好了！"
@@ -1293,12 +1350,9 @@ case $choice in
       3)
       clear
       # Discuz论坛
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/discuz.com.conf
 
@@ -1311,18 +1365,7 @@ case $choice in
       unzip -o Discuz_X3.5_SC_UTF8_20230520.zip
       rm Discuz_X3.5_SC_UTF8_20230520.zip
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1342,13 +1385,10 @@ case $choice in
       4)
       clear
       # 可道云桌面
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
+
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/kdy.com.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
@@ -1359,18 +1399,7 @@ case $choice in
       unzip -o 1.42.04.zip
       rm 1.42.04.zip
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1389,13 +1418,9 @@ case $choice in
       5)
       clear
       # 苹果CMS
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/maccms.com.conf
 
@@ -1410,18 +1435,7 @@ case $choice in
       cp /home/web/html/$yuming/maccms10-master/template/DYXS2/asset/admin/dycms.html /home/web/html/$yuming/maccms10-master/application/admin/view/system
       mv /home/web/html/$yuming/maccms10-master/admin.php /home/web/html/$yuming/maccms10-master/vip.php && wget -O /home/web/html/$yuming/maccms10-master/application/extra/maccms.php https://raw.githubusercontent.com/kejilion/Website_source_code/main/maccms.php
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1444,13 +1458,9 @@ case $choice in
       6)
       clear
       # 独脚数卡
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/dujiaoka.com.conf
 
@@ -1461,18 +1471,7 @@ case $choice in
       cd $yuming
       wget https://github.com/assimon/dujiaoka/releases/download/2.0.6/2.0.6-antibody.tar.gz && tar -zxvf 2.0.6-antibody.tar.gz && rm 2.0.6-antibody.tar.gz
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1505,23 +1504,12 @@ case $choice in
       7)
       clear
       # BingChat
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-
+      add_yuming
       install_ssltls
 
       docker run -d -p 3099:8080 --name go-proxy-bingai --restart=unless-stopped adams549659584/go-proxy-bingai
 
-      # Get external IP address
-      external_ip=$(curl -s ipv4.ip.sb)
-
-      wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy.conf
-      sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0.0.0.0/$external_ip/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0000/3099/g" /home/web/conf.d/$yuming.conf
-
-      docker restart nginx
+      reverse_proxy
 
       clear
       echo "您的BingChat网站搭建好了！"
@@ -1532,16 +1520,11 @@ case $choice in
       8)
       clear
       # flarum论坛
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/flarum.com.conf
-
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
       cd /home/web/html
@@ -1557,18 +1540,7 @@ case $choice in
       docker exec php sh -c "cd /var/www/html/$yuming && composer require flarum-lang/chinese-simplified"
       docker exec php sh -c "cd /var/www/html/$yuming && composer require fof/polls"
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1588,10 +1560,7 @@ case $choice in
       9)
       clear
       # Bitwarden
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-
+      add_yuming
       install_ssltls
 
       docker run -d \
@@ -1601,15 +1570,7 @@ case $choice in
         -v /home/web/html/$yuming/bitwarden/data:/data \
         vaultwarden/server
 
-      # Get external IP address
-      external_ip=$(curl -s ipv4.ip.sb)
-
-      wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy.conf
-      sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0.0.0.0/$external_ip/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0000/3280/g" /home/web/conf.d/$yuming.conf
-
-      docker restart nginx
+      reverse_proxy
 
       clear
       echo "您的Bitwarden网站搭建好了！"
@@ -1619,22 +1580,13 @@ case $choice in
 
       10)
       clear
-      # Bitwarden
-      read -p "请输入你解析的域名: " yuming
-
+      # halo
+      add_yuming
       install_ssltls
 
       docker run -d --name halo --restart always --network web_default -p 8010:8090 -v /home/web/html/$yuming/.halo2:/root/.halo2 halohub/halo:2.9
 
-      # Get external IP address
-      external_ip=$(curl -s ipv4.ip.sb)
-
-      wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy.conf
-      sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0.0.0.0/$external_ip/g" /home/web/conf.d/$yuming.conf
-      sed -i "s/0000/8010/g" /home/web/conf.d/$yuming.conf
-
-      docker restart nginx
+      reverse_proxy
 
       clear
       echo "您的Halo网站搭建好了！"
@@ -1645,13 +1597,9 @@ case $choice in
       11)
       clear
       # typecho
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
-      dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-      dbname="${dbname}"
-
+      add_yuming
       install_ssltls
+      add_db
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/typecho.com.conf
       sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
@@ -1663,18 +1611,7 @@ case $choice in
       unzip latest.zip
       rm latest.zip
 
-      docker exec nginx chmod -R 777 /var/www/html
-      docker exec php chmod -R 777 /var/www/html
-      docker exec php74 chmod -R 777 /var/www/html
-
-      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-      docker exec mysql mysql -u root -p"$dbrootpasswd" -e "CREATE DATABASE $dbname; GRANT ALL PRIVILEGES ON $dbname.* TO \"$dbuse\"@\"%\";"
-
-      docker restart php
-      docker restart php74
-      docker restart nginx
+      restart_ldnmp
 
 
       clear
@@ -1692,23 +1629,8 @@ case $choice in
 
 
       21)
-      clear
-      if command -v apt &>/dev/null; then
-          apt update -y
-          apt install -y curl wget sudo socat unzip tar htop
-      elif command -v yum &>/dev/null; then
-          yum -y update
-          yum -y install curl
-          yum -y install wget
-          yum -y install sudo
-          yum -y install socat
-          yum -y install unzip
-          yum -y install tar
-          yum -y install htop
-      else
-          echo "未知的包管理器!"
-      fi
-
+      check_port
+      install_dependency
       install_docker
       install_certbot
 
@@ -1778,10 +1700,8 @@ case $choice in
 
       24)
       clear
-      # wordpress
-      external_ip=$(curl -s ipv4.ip.sb)
-      echo -e "先将域名解析到本机IP: \033[33m$external_ip\033[0m"
-      read -p "请输入你解析的域名: " yuming
+      # 静态界面
+      add_yuming
       install_ssltls
 
       wget -O /home/web/conf.d/$yuming.conf https://raw.githubusercontent.com/kejilion/nginx/main/html.conf
@@ -1985,25 +1905,8 @@ case $choice in
       ;;
 
     34)
-      clear
-      cd /home/ && ls -t /home/*.tar.gz | head -1 | xargs -I {} tar -xzf {}
-
-      if command -v apt &>/dev/null; then
-          apt update -y
-          apt install -y curl wget sudo socat unzip tar htop
-      elif command -v yum &>/dev/null; then
-          yum -y update
-          yum -y install curl
-          yum -y install wget
-          yum -y install sudo
-          yum -y install socat
-          yum -y install unzip
-          yum -y install tar
-          yum -y install htop
-      else
-          echo "未知的包管理器!"
-      fi
-
+      check_port
+      install_dependency
       install_docker
       install_certbot
       install_ldnmp
@@ -2079,15 +1982,7 @@ case $choice in
 
                       ;;
                   9)
-                      systemctl disable fail2ban
-                      systemctl stop fail2ban
-                      apt remove -y --purge fail2ban
-                      if [ $? -eq 0 ]; then
-                          echo "Fail2ban已卸载"
-                      else
-                          echo "卸载失败"
-                      fi
-                      rm -rf /etc/fail2ban
+                      remove fail2ban
                       break
                       ;;
                   0)
@@ -2097,23 +1992,18 @@ case $choice in
                       echo "无效的选择，请重新输入。"
                       ;;
               esac
-              echo -e "\033[0;32m操作完成\033[0m"
-              echo "按任意键继续..."
-              read -n 1 -s -r -p ""
-              echo ""
+              break_end
+
           done
       else
           clear
           # 安装Fail2ban
           if [ -f /etc/debian_version ]; then
               # Debian/Ubuntu系统
-              apt update -y
-              apt install -y fail2ban
+              install fail2ban
           elif [ -f /etc/redhat-release ]; then
               # CentOS系统
-              yum update -y
-              yum install -y epel-release
-              yum install -y fail2ban
+              install epel-release fail2ban
           else
               echo "不支持的操作系统类型"
               exit 1
@@ -2226,10 +2116,8 @@ case $choice in
                       echo "无效的选择，请重新输入。"
                       ;;
               esac
-              echo -e "\033[0;32m操作完成\033[0m"
-              echo "按任意键继续..."
-              read -n 1 -s -r -p ""
-              echo ""
+              break_end
+
           done
         ;;
 
@@ -2239,15 +2127,8 @@ case $choice in
       docker rm -f nginx php php74 mysql redis
       docker rmi nginx php:fpm php:7.4.33-fpm mysql redis
 
-      if command -v apt &>/dev/null; then
-          apt update -y
-          apt upgrade -y
-      elif command -v yum &>/dev/null; then
-          yum -y update
-      else
-          echo "未知的包管理器!"
-      fi
-
+      check_port
+      install_dependency
       install_docker
       install_certbot
       install_ldnmp
@@ -2282,20 +2163,15 @@ case $choice in
     *)
         echo "无效的输入!"
     esac
+    break_end
 
-    echo -e "\033[0;32m操作完成\033[0m"
-    echo "按任意键继续..."
-    read -n 1 -s -r -p ""
-    echo ""
-    clear
   done
       ;;
 
   11)
     while true; do
-
-      echo " ▼ "
-      echo "面板工具"
+      clear
+      echo "▶ 面板工具"
       echo "------------------------"
       echo "1. 宝塔面板官方版                       2. aaPanel宝塔国际版"
       echo "3. 1Panel新一代管理面板                 4. NginxProxyManager可视化面板"
@@ -3004,16 +2880,7 @@ case $choice in
                     esac
             else
                 clear
-                if ! command -v telnet &>/dev/null; then
-                    if command -v apt &>/dev/null; then
-                        apt update -y && apt install -y telnet
-                    elif command -v yum &>/dev/null; then
-                        yum -y update && yum -y install telnet
-                    else
-                        echo "未知的包管理器!"
-                        exit 1
-                    fi
-                fi
+                install telnet
 
                 clear
                 echo ""
@@ -4184,18 +4051,15 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
     done
     ;;
 
   12)
     while true; do
-      echo " ▼ "
-      echo "我的工作区"
+      clear
+      echo "▶ 我的工作区"
       echo "系统将为你提供5个后台运行的工作区，你可以用来执行长时间的任务"
       echo "即使你断开SSH，工作区中的任务也不会中断，非常方便！来试试吧！"
       echo -e "\033[33m注意: 进入工作区后使用Ctrl+b再单独按d，退出工作区！\033[0m"
@@ -4314,19 +4178,15 @@ case $choice in
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
     done
     ;;
 
   13)
     while true; do
-
-      echo " ▼ "
-      echo "系统工具"
+      clear
+      echo "▶ 系统工具"
       echo "------------------------"
       echo "1. 设置脚本启动快捷键"
       echo "------------------------"
@@ -4480,12 +4340,7 @@ case $choice in
           5)
               clear
               iptables_open
-
-              apt purge -y iptables-persistent > /dev/null 2>&1
-              apt purge -y ufw > /dev/null 2>&1
-              yum remove -y firewalld > /dev/null 2>&1
-              yum remove -y iptables-services > /dev/null 2>&1
-
+              remove iptables-persistent ufw firewalld iptables-services > /dev/null 2>&1
               echo "端口已全部开放"
 
               ;;
@@ -4520,11 +4375,7 @@ case $choice in
 
               clear
               iptables_open
-
-              apt purge -y iptables-persistent > /dev/null 2>&1
-              apt purge -y ufw > /dev/null 2>&1
-              yum remove -y firewalld > /dev/null 2>&1
-              yum remove -y iptables-services > /dev/null 2>&1
+              remove iptables-persistent ufw firewalld iptables-services > /dev/null 2>&1
 
               ;;
 
@@ -4822,7 +4673,6 @@ case $choice in
               done
               ;;
 
-
           14)
             clear
 
@@ -4875,112 +4725,65 @@ case $choice in
               ;;
 
           15)
-              while true; do
-                  clear
-                  echo "系统时间信息"
+            while true; do
+                clear
+                echo "系统时间信息"
 
-                  # 获取当前系统时区
-                  current_timezone=$(timedatectl show --property=Timezone --value)
+                # 获取当前系统时区
+                current_timezone=$(timedatectl show --property=Timezone --value)
 
-                  # 获取当前系统时间
-                  current_time=$(date +"%Y-%m-%d %H:%M:%S")
+                # 获取当前系统时间
+                current_time=$(date +"%Y-%m-%d %H:%M:%S")
 
-                  # 显示时区和时间
-                  echo "当前系统时区：$current_timezone"
-                  echo "当前系统时间：$current_time"
+                # 显示时区和时间
+                echo "当前系统时区：$current_timezone"
+                echo "当前系统时间：$current_time"
 
-                  echo ""
-                  echo "时区切换"
-                  echo "亚洲------------------------"
-                  echo "1. 中国上海时间              2. 中国香港时间"
-                  echo "3. 日本东京时间              4. 韩国首尔时间"
-                  echo "5. 新加坡时间                6. 印度加尔各答时间"
-                  echo "7. 阿联酋迪拜时间            8. 澳大利亚悉尼时间"
-                  echo "欧洲------------------------"
-                  echo "11. 英国伦敦时间             12. 法国巴黎时间"
-                  echo "13. 德国柏林时间             14. 俄罗斯莫斯科时间"
-                  echo "15. 荷兰尤特赖赫特时间       16. 西班牙马德里时间"
-                  echo "美洲------------------------"
-                  echo "21. 美国西部时间             22. 美国东部时间"
-                  echo "23. 加拿大时间               24. 墨西哥时间"
-                  echo "25. 巴西时间                 26. 阿根廷时间"
-                  echo "------------------------"
-                  echo "0. 返回上一级选单"
-                  echo "------------------------"
-                  read -p "请输入你的选择: " sub_choice
+                echo ""
+                echo "时区切换"
+                echo "亚洲------------------------"
+                echo "1. 中国上海时间              2. 中国香港时间"
+                echo "3. 日本东京时间              4. 韩国首尔时间"
+                echo "5. 新加坡时间                6. 印度加尔各答时间"
+                echo "7. 阿联酋迪拜时间            8. 澳大利亚悉尼时间"
+                echo "欧洲------------------------"
+                echo "11. 英国伦敦时间             12. 法国巴黎时间"
+                echo "13. 德国柏林时间             14. 俄罗斯莫斯科时间"
+                echo "15. 荷兰尤特赖赫特时间       16. 西班牙马德里时间"
+                echo "美洲------------------------"
+                echo "21. 美国西部时间             22. 美国东部时间"
+                echo "23. 加拿大时间               24. 墨西哥时间"
+                echo "25. 巴西时间                 26. 阿根廷时间"
+                echo "------------------------"
+                echo "0. 返回上一级选单"
+                echo "------------------------"
+                read -p "请输入你的选择: " sub_choice
 
-                  case $sub_choice in
-                      1)
-                        timedatectl set-timezone Asia/Shanghai
-                          ;;
-
-                      2)
-                        timedatectl set-timezone Asia/Hong_Kong
-                          ;;
-                      3)
-                        timedatectl set-timezone Asia/Tokyo
-                          ;;
-                      4)
-                        timedatectl set-timezone Asia/Seoul
-                          ;;
-                      5)
-                        timedatectl set-timezone Asia/Singapore
-                          ;;
-                      6)
-                        timedatectl set-timezone Asia/Kolkata
-                          ;;
-                      7)
-                        timedatectl set-timezone Asia/Dubai
-                          ;;
-                      8)
-                        timedatectl set-timezone Australia/Sydney
-                          ;;
-                      11)
-                        timedatectl set-timezone Europe/London
-                          ;;
-                      12)
-                        timedatectl set-timezone Europe/Paris
-                          ;;
-                      13)
-                        timedatectl set-timezone Europe/Berlin
-                          ;;
-                      14)
-                        timedatectl set-timezone Europe/Moscow
-                          ;;
-                      15)
-                        timedatectl set-timezone Europe/Amsterdam
-                          ;;
-                      16)
-                        timedatectl set-timezone Europe/Madrid
-                          ;;
-                      21)
-                        timedatectl set-timezone America/Los_Angeles
-                          ;;
-                      22)
-                        timedatectl set-timezone America/New_York
-                          ;;
-                      23)
-                        timedatectl set-timezone America/Vancouver
-                          ;;
-                      24)
-                        timedatectl set-timezone America/Mexico_City
-                          ;;
-                      25)
-                        timedatectl set-timezone America/Sao_Paulo
-                          ;;
-                      26)
-                        timedatectl set-timezone America/Argentina/Buenos_Aires
-                          ;;
-                      0)
-                          break  # 跳出循环，退出菜单
-                          ;;
-
-                      *)
-                          break  # 跳出循环，退出菜单
-                          ;;
-                  esac
-              done
-
+                case $sub_choice in
+                    1) timedatectl set-timezone Asia/Shanghai ;;
+                    2) timedatectl set-timezone Asia/Hong_Kong ;;
+                    3) timedatectl set-timezone Asia/Tokyo ;;
+                    4) timedatectl set-timezone Asia/Seoul ;;
+                    5) timedatectl set-timezone Asia/Singapore ;;
+                    6) timedatectl set-timezone Asia/Kolkata ;;
+                    7) timedatectl set-timezone Asia/Dubai ;;
+                    8) timedatectl set-timezone Australia/Sydney ;;
+                    11) timedatectl set-timezone Europe/London ;;
+                    12) timedatectl set-timezone Europe/Paris ;;
+                    13) timedatectl set-timezone Europe/Berlin ;;
+                    14) timedatectl set-timezone Europe/Moscow ;;
+                    15) timedatectl set-timezone Europe/Amsterdam ;;
+                    16) timedatectl set-timezone Europe/Madrid ;;
+                    21) timedatectl set-timezone America/Los_Angeles ;;
+                    22) timedatectl set-timezone America/New_York ;;
+                    23) timedatectl set-timezone America/Vancouver ;;
+                    24) timedatectl set-timezone America/Mexico_City ;;
+                    25) timedatectl set-timezone America/Sao_Paulo ;;
+                    26) timedatectl set-timezone America/Argentina/Buenos_Aires ;;
+                    0) break ;; # 跳出循环，退出菜单
+                    *) break ;; # 跳出循环，退出菜单
+                esac
+            done
               ;;
 
           16)
@@ -5005,8 +4808,7 @@ case $choice in
                         apt purge -y 'linux-*xanmod1*'
                         update-grub
 
-                        apt update -y
-                        apt install -y wget gnupg
+                        install wget gnupg
 
                         # wget -qO - https://dl.xanmod.org/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg --yes
                         wget -qO - https://raw.githubusercontent.com/kejilion/sh/main/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg --yes
@@ -5074,8 +4876,7 @@ case $choice in
               break
             fi
 
-            apt update -y
-            apt install -y wget gnupg
+            install wget gnupg
 
             # wget -qO - https://dl.xanmod.org/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg --yes
             wget -qO - https://raw.githubusercontent.com/kejilion/sh/main/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg --yes
@@ -5205,8 +5006,7 @@ EOF
                           ;;
 
                       9)
-                      apt remove -y iptables-persistent
-                      apt purge -y iptables-persistent
+                      remove iptables-persistent
                       rm /etc/iptables/rules.v4
                       break
                       # echo "防火墙已卸载，重启生效"
@@ -5245,11 +5045,7 @@ EOF
 
           clear
           iptables_open
-
-          apt remove -y iptables-persistent
-          apt purge -y iptables-persistent
-          apt remove -y ufw
-          apt purge -y ufw
+          remove iptables-persistent ufw
           rm /etc/iptables/rules.v4
 
           apt update -y && apt install -y iptables-persistent
@@ -5369,14 +5165,14 @@ EOF
           backup_sources() {
               case "$ID" in
                   ubuntu)
-                      sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+                      cp /etc/apt/sources.list /etc/apt/sources.list.bak
                       ;;
                   debian)
-                      sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+                      cp /etc/apt/sources.list /etc/apt/sources.list.bak
                       ;;
                   centos)
                       if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
-                          sudo cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+                          cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
                       else
                           echo "备份已存在，无需重复备份"
                       fi
@@ -5393,13 +5189,13 @@ EOF
           restore_initial_source() {
               case "$ID" in
                   ubuntu)
-                      sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
+                      cp /etc/apt/sources.list.bak /etc/apt/sources.list
                       ;;
                   debian)
-                      sudo cp /etc/apt/sources.list.bak /etc/apt/sources.list
+                      cp /etc/apt/sources.list.bak /etc/apt/sources.list
                       ;;
                   centos)
-                      sudo cp /etc/yum.repos.d/CentOS-Base.repo.bak /etc/yum.repos.d/CentOS-Base.repo
+                      cp /etc/yum.repos.d/CentOS-Base.repo.bak /etc/yum.repos.d/CentOS-Base.repo
                       ;;
                   *)
                       echo "未知系统，无法执行还原操作"
@@ -5413,13 +5209,13 @@ EOF
           switch_source() {
               case "$ID" in
                   ubuntu)
-                      sudo sed -i 's|'"$initial_ubuntu_source"'|'"$1"'|g' /etc/apt/sources.list
+                      sed -i 's|'"$initial_ubuntu_source"'|'"$1"'|g' /etc/apt/sources.list
                       ;;
                   debian)
-                      sudo sed -i 's|'"$initial_debian_source"'|'"$1"'|g' /etc/apt/sources.list
+                      sed -i 's|'"$initial_debian_source"'|'"$1"'|g' /etc/apt/sources.list
                       ;;
                   centos)
-                      sudo sed -i "s|^baseurl=.*$|baseurl=$1|g" /etc/yum.repos.d/CentOS-Base.repo
+                      sed -i "s|^baseurl=.*$|baseurl=$1|g" /etc/yum.repos.d/CentOS-Base.repo
                       ;;
                   *)
                       echo "未知系统，无法执行切换操作"
@@ -5528,11 +5324,8 @@ EOF
                       echo "无效的选择，请重新输入"
                       ;;
               esac
-              echo -e "\033[0;32m操作完成\033[0m"
-              echo "按任意键继续..."
-              read -n 1 -s -r -p ""
-              echo ""
-              clear
+              break_end
+
           done
 
               ;;
@@ -5642,11 +5435,8 @@ EOF
               echo "无效的输入!"
               ;;
       esac
-      echo -e "\033[0;32m操作完成\033[0m"
-      echo "按任意键继续..."
-      read -n 1 -s -r -p ""
-      echo ""
-      clear
+      break_end
+
     done
     ;;
 
@@ -5657,10 +5447,7 @@ EOF
     echo ""
     curl -sS -O https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh && chmod +x kejilion.sh
     echo "脚本已更新到最新版本！"
-    echo -e "\033[0;32m操作完成\033[0m"
-    echo "按任意键继续..."
-    read -n 1 -s -r -p ""
-    echo ""
+    break_end
     ./kejilion.sh
     exit
     ;;
@@ -5672,11 +5459,7 @@ EOF
 
   *)
     echo "无效的输入!"
-
+    ;;
 esac
-  echo -e "\033[0;32m操作完成\033[0m"
-  echo "按任意键继续..."
-  read -n 1 -s -r -p ""
-  echo ""
-  clear
+    break_end
 done
